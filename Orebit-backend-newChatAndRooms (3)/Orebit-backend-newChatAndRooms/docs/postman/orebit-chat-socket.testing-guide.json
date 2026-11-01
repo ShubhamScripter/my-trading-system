@@ -1,0 +1,26 @@
+{
+  "guideVersion": 1,
+  "namespace": "/chat",
+  "url": "ws://localhost:3005/chat",
+  "connect": {
+    "auth": "The orebit_session cookie only. Sign in with POST /auth/login first; send the Origin header of an allowed page (CHAT_ALLOWED_ORIGINS).",
+    "connect_error": ["unauthenticated", "session_refresh_required", "session_store_unavailable", "origin_not_allowed", "server_busy"]
+  },
+  "send": [
+    { "event": "send_message", "payload": { "roomId": "global", "content": "hello", "clientMessageId": "0192f6a0-0000-7000-8000-00000000aa01" }, "ack": { "ok": true, "data": { "messageId": "uuid", "createdAt": "iso" } } },
+    { "event": "send_message", "payload": { "roomId": "global", "mediaUrl": "https://media.tenor.com/x/cat.gif", "mediaType": "gif" }, "ack": { "ok": true, "data": { "messageId": "uuid", "createdAt": "iso" } } },
+    { "event": "retract_message", "payload": { "messageId": "uuid", "note": "mistake" }, "ack": { "ok": true, "data": { "messageId": "uuid", "roomId": "uuid", "retractedAt": "iso" } } },
+    { "event": "join_room", "payload": { "roomId": "global" }, "ack": { "ok": true, "data": { "roomId": "uuid", "access": {}, "onlineCount": 1 } } },
+    { "event": "leave_room", "payload": {}, "ack": { "ok": true, "data": { "roomId": "uuid" } } },
+    { "event": "get_online_users", "payload": { "roomId": "global", "limit": 50, "prefix": "al" }, "ack": { "ok": true, "data": { "roomId": "uuid", "count": 1, "items": [], "nextCursor": null } } }
+  ],
+  "receive": ["new_message", "new_messages", "message_retracted", "message_pinned", "message_unpinned", "user_tagged", "room_access", "room_left", "rooms_changed", "online_count_updated", "online_users", "rate_limit_cooldown", "moderation_notice", "session_ended", "session_replaced", "exception"],
+  "failure": { "ok": false, "error": { "type": "forbidden", "extra": { "reason": "chat_banned" } } },
+  "reconnect": [
+    "Keep the id of the last message received.",
+    "After reconnect wait for room_access: joined.",
+    "GET /social/chat/rooms/:roomId/messages?after=<last id> until hasMore is false.",
+    "Resend an unacknowledged send with the same clientMessageId."
+  ],
+  "refusalReasons": ["chat_banned", "chat_muted", "room_read_only", "room_hidden", "content_blocked", "limit_blocked", "skin_not_allowed", "already_reported", "cannot_report_own_message", "already_retracted", "retract_window_passed", "feature_disabled", "upload_storage_unavailable", "media_deleted", "staff_only", "target_outranks_you", "session_replaced"]
+}

@@ -1,0 +1,1412 @@
+{
+  "contractVersion": 8,
+  "note": "Shared by Orebit-User/be and Orebit-Admin/be. Both copies of chat.contract.ts must give these results. Change the contract, this file and both copies together.",
+  "cases": [
+    {
+      "name": "empty room config gets the safe defaults",
+      "schema": "roomConfig",
+      "input": {},
+      "valid": true,
+      "expect": {
+        "status": "ACTIVE",
+        "contentControls": {
+          "allowText": true,
+          "allowEmoji": true,
+          "allowGif": true,
+          "allowImage": false,
+          "allowVideo": false,
+          "autoModeration": true,
+          "allowCommands": false,
+          "commands": [],
+          "allowAds": false
+        },
+        "rules": [],
+        "bannedWords": [],
+        "userRestrictions": []
+      }
+    },
+    {
+      "name": "maintenance with note and end time",
+      "schema": "roomConfig",
+      "input": {
+        "status": "MAINTENANCE",
+        "statusNote": "Upgrading media",
+        "statusUntil": "2026-10-01T10:00:00Z"
+      },
+      "valid": true
+    },
+    {
+      "name": "commands switched on with a command list (Module 5)",
+      "schema": "roomConfig",
+      "input": {
+        "contentControls": {
+          "allowCommands": true,
+          "commands": [
+            "mute",
+            "block",
+            "dm"
+          ]
+        }
+      },
+      "valid": true
+    },
+    {
+      "name": "ads switched on (Module 5)",
+      "schema": "roomConfig",
+      "input": {
+        "contentControls": {
+          "allowAds": true
+        }
+      },
+      "valid": true
+    },
+    {
+      "name": "rain is a command",
+      "schema": "roomConfig",
+      "input": {
+        "contentControls": {
+          "commands": [
+            "rain"
+          ]
+        }
+      },
+      "valid": true
+    },
+    {
+      "name": "command restriction with a command list",
+      "schema": "roomConfig",
+      "input": {
+        "userRestrictions": [
+          {
+            "targetType": "USER",
+            "targetValue": "bob",
+            "restriction": "RESTRICT_COMMANDS",
+            "commands": [
+              "ad",
+              "send"
+            ],
+            "internalReason": "Ad spam"
+          }
+        ]
+      },
+      "valid": true
+    },
+    {
+      "name": "a command list only goes with RESTRICT_COMMANDS",
+      "schema": "roomConfig",
+      "input": {
+        "userRestrictions": [
+          {
+            "targetType": "USER",
+            "targetValue": "bob",
+            "restriction": "MUTE",
+            "commands": [
+              "ad"
+            ],
+            "internalReason": "x"
+          }
+        ]
+      },
+      "valid": false
+    },
+    {
+      "name": "DM, gift, emoji, GIF and ad restrictions (Module 4)",
+      "schema": "roomConfig",
+      "input": {
+        "userRestrictions": [
+          {
+            "targetType": "KYC",
+            "targetValue": "1",
+            "restriction": "RESTRICT_DM",
+            "internalReason": "x"
+          },
+          {
+            "targetType": "USER",
+            "targetValue": "bob",
+            "restriction": "RESTRICT_GIFTS",
+            "internalReason": "x"
+          },
+          {
+            "targetType": "USER",
+            "targetValue": "bob",
+            "restriction": "RESTRICT_EMOJI",
+            "internalReason": "x"
+          },
+          {
+            "targetType": "USER",
+            "targetValue": "bob",
+            "restriction": "RESTRICT_GIF",
+            "internalReason": "x"
+          },
+          {
+            "targetType": "USER",
+            "targetValue": "bob",
+            "restriction": "RESTRICT_ADS",
+            "internalReason": "x"
+          }
+        ]
+      },
+      "valid": true
+    },
+    {
+      "name": "old money-command list is refused",
+      "schema": "roomConfig",
+      "input": {
+        "allowedCommands": [
+          "/rain"
+        ]
+      },
+      "valid": false
+    },
+    {
+      "name": "old adsAllowed flag is refused",
+      "schema": "roomConfig",
+      "input": {
+        "adsAllowed": true
+      },
+      "valid": false
+    },
+    {
+      "name": "rain restriction is accepted",
+      "schema": "roomConfig",
+      "input": {
+        "userRestrictions": [
+          {
+            "targetType": "USER",
+            "targetValue": "bob",
+            "restriction": "RESTRICT_RAIN",
+            "internalReason": "x"
+          }
+        ]
+      },
+      "valid": true
+    },
+    {
+      "name": "receiving-rain restriction is accepted for a group",
+      "schema": "roomConfig",
+      "input": {
+        "userRestrictions": [
+          {
+            "targetType": "LEVEL",
+            "targetValue": "50",
+            "restriction": "RESTRICT_RAIN_RECEIVE",
+            "internalReason": "x"
+          }
+        ]
+      },
+      "valid": true
+    },
+    {
+      "name": "VIP restriction target is refused",
+      "schema": "roomConfig",
+      "input": {
+        "userRestrictions": [
+          {
+            "targetType": "VIP",
+            "targetValue": "x",
+            "restriction": "MUTE",
+            "internalReason": "x"
+          }
+        ]
+      },
+      "valid": false
+    },
+    {
+      "name": "mute with a reason and an end",
+      "schema": "roomConfig",
+      "input": {
+        "userRestrictions": [
+          {
+            "targetType": "USER",
+            "targetValue": "bob",
+            "restriction": "MUTE",
+            "internalReason": "Spamming",
+            "expiresAt": "2026-10-01T10:00:00Z"
+          }
+        ]
+      },
+      "valid": true
+    },
+    {
+      "name": "restriction without a reason is refused",
+      "schema": "roomConfig",
+      "input": {
+        "userRestrictions": [
+          {
+            "targetType": "USER",
+            "targetValue": "bob",
+            "restriction": "MUTE"
+          }
+        ]
+      },
+      "valid": false
+    },
+    {
+      "name": "a BAN tier needs a duration or permanent",
+      "schema": "settingsDocument",
+      "input": {
+        "global": {
+          "moderation": {
+            "autoBanSequence": [
+              {
+                "tier": 1,
+                "action": "BAN",
+                "resetWindowHours": 24
+              }
+            ]
+          }
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "a permanent BAN tier is valid",
+      "schema": "settingsDocument",
+      "input": {
+        "global": {
+          "moderation": {
+            "autoBanSequence": [
+              {
+                "tier": 1,
+                "action": "WARNING",
+                "resetWindowHours": 24
+              },
+              {
+                "tier": 2,
+                "action": "BAN",
+                "permanent": true,
+                "resetWindowHours": 48
+              }
+            ]
+          }
+        }
+      },
+      "valid": true
+    },
+    {
+      "name": "spam protection bounds",
+      "schema": "settingsDocument",
+      "input": {
+        "global": {
+          "moderation": {
+            "spamProtection": {
+              "enabled": true,
+              "repeatCount": 1,
+              "windowSeconds": 10
+            }
+          }
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "a room no longer carries its own spam rule (one chat-wide rule, V2-30)",
+      "schema": "roomConfig",
+      "input": {
+        "spamProtection": {
+          "enabled": true,
+          "repeatCount": 3,
+          "windowSeconds": 10
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "a room no longer carries its own ban ladder (one chat-wide ladder, V2-30)",
+      "schema": "roomConfig",
+      "input": {
+        "autoBanSequence": [
+          {
+            "tier": 1,
+            "action": "WARNING",
+            "resetWindowHours": 24
+          }
+        ]
+      },
+      "valid": false
+    },
+    {
+      "name": "the chat-wide ladder may be empty: no automatic penalty",
+      "schema": "settingsDocument",
+      "input": {
+        "global": {
+          "moderation": {
+            "autoBanSequence": []
+          }
+        }
+      },
+      "valid": true
+    },
+    {
+      "name": "the chat-wide spam rule may be unset (null): no spam check",
+      "schema": "settingsDocument",
+      "input": {
+        "global": {
+          "moderation": {
+            "spamProtection": null
+          }
+        }
+      },
+      "valid": true
+    },
+    {
+      "name": "the chat-wide ladder has at most 10 tiers",
+      "schema": "settingsDocument",
+      "input": {
+        "global": {
+          "moderation": {
+            "autoBanSequence": [
+              {
+                "tier": 1,
+                "action": "WARNING",
+                "resetWindowHours": 24
+              },
+              {
+                "tier": 2,
+                "action": "WARNING",
+                "resetWindowHours": 24
+              },
+              {
+                "tier": 3,
+                "action": "WARNING",
+                "resetWindowHours": 24
+              },
+              {
+                "tier": 4,
+                "action": "WARNING",
+                "resetWindowHours": 24
+              },
+              {
+                "tier": 5,
+                "action": "WARNING",
+                "resetWindowHours": 24
+              },
+              {
+                "tier": 6,
+                "action": "WARNING",
+                "resetWindowHours": 24
+              },
+              {
+                "tier": 7,
+                "action": "WARNING",
+                "resetWindowHours": 24
+              },
+              {
+                "tier": 8,
+                "action": "WARNING",
+                "resetWindowHours": 24
+              },
+              {
+                "tier": 9,
+                "action": "WARNING",
+                "resetWindowHours": 24
+              },
+              {
+                "tier": 10,
+                "action": "WARNING",
+                "resetWindowHours": 24
+              },
+              {
+                "tier": 10,
+                "action": "WARNING",
+                "resetWindowHours": 24
+              }
+            ]
+          }
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "casino switch",
+      "schema": "roomConfig",
+      "input": {
+        "casino": {
+          "onlyUsersOnCasino": true
+        }
+      },
+      "valid": true
+    },
+    {
+      "name": "old casinoSettings object is refused",
+      "schema": "roomConfig",
+      "input": {
+        "casinoSettings": {
+          "autoSwitch": true
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "empty access rule is open with view-only outsiders",
+      "schema": "roomAccess",
+      "input": {},
+      "valid": true,
+      "expect": {
+        "allowedCountries": [],
+        "regionId": null,
+        "requirePremium": false,
+        "allowedPlanIds": [],
+        "minKycLevel": 0,
+        "minLevel": 0,
+        "minWagerUsd": null,
+        "ineligibleMode": "VIEW_ONLY",
+        "visibility": {
+          "groups": [],
+          "minLevel": 0
+        }
+      }
+    },
+    {
+      "name": "country codes must be ISO-2 capitals",
+      "schema": "roomAccess",
+      "input": {
+        "allowedCountries": [
+          "India"
+        ]
+      },
+      "valid": false
+    },
+    {
+      "name": "ISO-2 country codes",
+      "schema": "roomAccess",
+      "input": {
+        "allowedCountries": [
+          "IN",
+          "US"
+        ]
+      },
+      "valid": true
+    },
+    {
+      "name": "wager with 2 decimals is stored exactly",
+      "schema": "roomAccess",
+      "input": {
+        "minWagerUsd": "10.12"
+      },
+      "valid": true,
+      "expect": {
+        "minWagerUsd": "10.12"
+      }
+    },
+    {
+      "name": "wager with 3 decimals is refused, never rounded (V2-20)",
+      "schema": "roomAccess",
+      "input": {
+        "minWagerUsd": "10.123"
+      },
+      "valid": false
+    },
+    {
+      "name": "wager as a number becomes a string",
+      "schema": "roomAccess",
+      "input": {
+        "minWagerUsd": 25.5
+      },
+      "valid": true,
+      "expect": {
+        "minWagerUsd": "25.5"
+      }
+    },
+    {
+      "name": "old premium tier is refused",
+      "schema": "roomAccess",
+      "input": {
+        "premiumTier": "TOP"
+      },
+      "valid": false
+    },
+    {
+      "name": "old view-only country list is refused",
+      "schema": "roomAccess",
+      "input": {
+        "viewOnlyCountries": [
+          "US"
+        ]
+      },
+      "valid": false
+    },
+    {
+      "name": "The VIP system is removed: requireVip is refused",
+      "schema": "roomAccess",
+      "input": {
+        "requireVip": true
+      },
+      "valid": false
+    },
+    {
+      "name": "The VIP audience is removed",
+      "schema": "roomAccess",
+      "input": {
+        "visibility": {
+          "groups": [
+            "VIP"
+          ]
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "Visibility for premium users and level 50 and up is kept (Chat SETTINGS)",
+      "schema": "roomAccess",
+      "input": {
+        "visibility": {
+          "groups": [
+            "PREMIUM"
+          ],
+          "minLevel": 50
+        }
+      },
+      "valid": true
+    },
+    {
+      "name": "promo-only outsiders",
+      "schema": "roomAccess",
+      "input": {
+        "ineligibleMode": "PROMO_ONLY"
+      },
+      "valid": true
+    },
+    {
+      "name": "empty settings document",
+      "schema": "settingsDocument",
+      "input": {},
+      "valid": true,
+      "expect": {
+        "global": {},
+        "countries": {}
+      }
+    },
+    {
+      "name": "per-country exception",
+      "schema": "settingsDocument",
+      "input": {
+        "global": {
+          "defaultRoom": {
+            "base": "COUNTRY"
+          }
+        },
+        "countries": {
+          "IN": {
+            "minLevel": {
+              "global": 5
+            }
+          }
+        }
+      },
+      "valid": true
+    },
+    {
+      "name": "unknown settings key is refused",
+      "schema": "settingsDocument",
+      "input": {
+        "global": {
+          "rooms": {
+            "byPlanet": true
+          }
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "unbuilt feature section is refused",
+      "schema": "settingsDocument",
+      "input": {
+        "global": {
+          "rain": {
+            "enabled": true
+          }
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "limits cannot vary per country",
+      "schema": "settingsDocument",
+      "input": {
+        "countries": {
+          "IN": {
+            "limits": {
+              "eventsPerSecond": 5
+            }
+          }
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "GIF provider must be TENOR or GIPHY",
+      "schema": "settingsDocument",
+      "input": {
+        "global": {
+          "media": {
+            "gifProvider": "IMGUR"
+          }
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "burst below the rate is refused",
+      "schema": "settingsDocument",
+      "input": {
+        "global": {
+          "limits": {
+            "eventsPerSecond": 20,
+            "eventsBurst": 10
+          }
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "lower-case country key is refused",
+      "schema": "settingsDocument",
+      "input": {
+        "countries": {
+          "in": {}
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "a moderator role with ACT and REPORT permissions (Module 4)",
+      "schema": "settingsDocument",
+      "input": {
+        "global": {
+          "staffRoles": {
+            "MODERATOR": {
+              "permissions": {
+                "WARN": "ACT",
+                "BAN": "REPORT"
+              },
+              "maxBanHours": 12,
+              "penaltyScope": "BELOW",
+              "historyDays": 30,
+              "pinRoomIds": [],
+              "rulesRoomIds": [],
+              "restrictableCommands": [
+                "ad"
+              ],
+              "groupPrivilege": false,
+              "visibleStats": [
+                "MESSAGES",
+                "BANS"
+              ]
+            }
+          }
+        }
+      },
+      "valid": true
+    },
+    {
+      "name": "a rain permission is accepted",
+      "schema": "settingsDocument",
+      "input": {
+        "global": {
+          "staffRoles": {
+            "MODERATOR": {
+              "permissions": {
+                "RESTRICT_RAIN": "ACT",
+                "RESTRICT_RAIN_RECEIVE": "REPORT",
+                "DISABLE_RAINPOOL_RAINS": "REPORT",
+                "DISABLE_USER_RAINS": "ACT",
+                "DISABLE_OVERALL_RAINS": "REPORT"
+              },
+              "maxBanHours": 12,
+              "penaltyScope": "BELOW",
+              "historyDays": 30,
+              "pinRoomIds": [],
+              "rulesRoomIds": [],
+              "restrictableCommands": [],
+              "groupPrivilege": false,
+              "visibleStats": []
+            }
+          }
+        }
+      },
+      "valid": true
+    },
+    {
+      "name": "an unknown staff role is refused",
+      "schema": "settingsDocument",
+      "input": {
+        "global": {
+          "staffRoles": {
+            "HEAD_MODERATOR": {}
+          }
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "commands switched off chat-wide except a list",
+      "schema": "settingsDocument",
+      "input": {
+        "global": {
+          "commands": {
+            "enabled": true,
+            "disabled": [
+              "send",
+              "ad"
+            ]
+          }
+        }
+      },
+      "valid": true
+    },
+    {
+      "name": "gift limits are USD strings",
+      "schema": "settingsDocument",
+      "input": {
+        "global": {
+          "gifts": {
+            "minUsd": "1",
+            "maxUsd": "500.5",
+            "requirePaymentPin": true
+          }
+        }
+      },
+      "valid": true
+    },
+    {
+      "name": "ad prices are a percentage or USD",
+      "schema": "settingsDocument",
+      "input": {
+        "global": {
+          "ads": {
+            "basePriceUsd": "3",
+            "premiumRoom": {
+              "kind": "PERCENT",
+              "value": "50"
+            }
+          }
+        }
+      },
+      "valid": true
+    },
+    {
+      "name": "pinned ads need min minutes not above max",
+      "schema": "settingsDocument",
+      "input": {
+        "global": {
+          "ads": {
+            "pinned": {
+              "enabled": true,
+              "pricePerMinute": {
+                "kind": "USD",
+                "value": "1"
+              },
+              "maxQueue": 3,
+              "minMinutes": 60,
+              "maxMinutes": 10
+            }
+          }
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "ads cannot vary per country",
+      "schema": "settingsDocument",
+      "input": {
+        "countries": {
+          "IN": {
+            "ads": {
+              "enabled": false
+            }
+          }
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "DM limits and group limits (Modules 8-9)",
+      "schema": "settingsDocument",
+      "input": {
+        "global": {
+          "dm": {
+            "status": "MAINTENANCE",
+            "newDmFollowerCount": 5,
+            "newDmFollowerWindowHours": 1
+          },
+          "groups": {
+            "maxAdmins": null,
+            "maxSubAdmins": 3,
+            "delegablePermissions": [
+              "RENAME",
+              "BAN"
+            ]
+          }
+        }
+      },
+      "valid": true
+    },
+    {
+      "name": "DM cannot be ACTIVE while a value is unset (V2-44)",
+      "schema": "settingsDocument",
+      "input": {
+        "global": {
+          "dm": {
+            "status": "ACTIVE"
+          }
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "DM cannot be ACTIVE without the last-seen default and the quiet window (V2-44)",
+      "schema": "settingsDocument",
+      "input": {
+        "global": {
+          "dm": {
+            "status": "ACTIVE",
+            "newDmFollowerCount": 20,
+            "newDmFollowerWindowHours": 24,
+            "newDmNonFollowerCount": 5,
+            "newDmNonFollowerWindowHours": 24,
+            "strangerMessageCap": 3,
+            "merchantMessageCap": 3,
+            "maxPinnedPeople": 5,
+            "maxPinnedMessages": 10,
+            "typingEverySeconds": 2
+          }
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "DM can be ACTIVE once every value is set (V2-44, V2-61, V2-113)",
+      "schema": "settingsDocument",
+      "input": {
+        "global": {
+          "dm": {
+            "status": "ACTIVE",
+            "newDmFollowerCount": 20,
+            "newDmFollowerWindowHours": 24,
+            "newDmNonFollowerCount": 5,
+            "newDmNonFollowerWindowHours": 24,
+            "strangerMessageCap": 3,
+            "merchantMessageCap": 3,
+            "maxPinnedPeople": 5,
+            "maxPinnedMessages": 10,
+            "typingEverySeconds": 2
+          },
+          "privacy": {
+            "lastSeenDefault": "FRIENDS",
+            "quietStart": "22:00",
+            "quietEnd": "07:00"
+          }
+        }
+      },
+      "valid": true
+    },
+    {
+      "name": "group limits by type, channel limits and invite limits (V2-46, V2-121)",
+      "schema": "settingsDocument",
+      "input": {
+        "global": {
+          "groups": {
+            "memberLimitPublic": 500,
+            "memberLimitPrivate": 200,
+            "memberLimitChannel": 100000,
+            "maxChannelAdmins": 10,
+            "receiptGroupSize": 100,
+            "invitesPerWindow": 20,
+            "inviteWindowHours": 24,
+            "maxPendingInvitesPerPerson": 5,
+            "inviteExpiryHours": 168
+          }
+        }
+      },
+      "valid": true
+    },
+    {
+      "name": "a group member limit below 2 is refused",
+      "schema": "settingsDocument",
+      "input": {
+        "global": {
+          "groups": {
+            "memberLimitPublic": 1
+          }
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "the removed built-in DM names are refused (rename everywhere, D-43)",
+      "schema": "settingsDocument",
+      "input": {
+        "global": {
+          "dm": {
+            "newDmCount": 5
+          }
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "maintenance matrix: areas, auto-moderation checks and a command under maintenance",
+      "schema": "settingsDocument",
+      "input": {
+        "global": {
+          "maintenance": {
+            "chat": "ACTIVE",
+            "publicChat": "MAINTENANCE",
+            "skins": "DISABLED",
+            "autoModLinks": "DISABLED",
+            "commandsInMaintenance": [
+              "send"
+            ],
+            "note": "Back at 18:00"
+          }
+        }
+      },
+      "valid": true
+    },
+    {
+      "name": "a maintenance status must be ACTIVE, MAINTENANCE or DISABLED",
+      "schema": "settingsDocument",
+      "input": {
+        "global": {
+          "maintenance": {
+            "ads": "PAUSED"
+          }
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "maintenance is chat-wide and cannot vary by country",
+      "schema": "settingsDocument",
+      "input": {
+        "global": {},
+        "countries": {
+          "IN": {
+            "maintenance": {
+              "chat": "DISABLED"
+            }
+          }
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "privacy defaults with a quiet-mode window",
+      "schema": "settingsDocument",
+      "input": {
+        "global": {
+          "privacy": {
+            "lastSeenDefault": "FRIENDS",
+            "quietModeDefault": "AUTO_NIGHT",
+            "quietStart": "23:30",
+            "quietEnd": "06:00"
+          }
+        }
+      },
+      "valid": true
+    },
+    {
+      "name": "a quiet-mode time must be HH:MM",
+      "schema": "settingsDocument",
+      "input": {
+        "global": {
+          "privacy": {
+            "quietStart": "25:00"
+          }
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "a restriction from receiving money through chat (Module 4)",
+      "schema": "roomConfig",
+      "input": {
+        "userRestrictions": [
+          {
+            "targetType": "KYC",
+            "targetValue": "1",
+            "restriction": "RESTRICT_RECEIVE_GIFTS",
+            "internalReason": "x"
+          }
+        ]
+      },
+      "valid": true
+    },
+    {
+      "name": "a stat that does not exist cannot be made visible to a role",
+      "schema": "settingsDocument",
+      "input": {
+        "global": {
+          "staffRoles": {
+            "MODERATOR": {
+              "permissions": {
+                "WARN": "ACT",
+                "BAN": "REPORT"
+              },
+              "maxBanHours": 12,
+              "penaltyScope": "BELOW",
+              "historyDays": 30,
+              "pinRoomIds": [],
+              "rulesRoomIds": [],
+              "restrictableCommands": [
+                "ad"
+              ],
+              "groupPrivilege": false,
+              "visibleStats": [
+                "PASSWORDS"
+              ]
+            }
+          }
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "per-currency gift limits, ad skins, rewards and the chat bot profile (Module 5)",
+      "schema": "settingsDocument",
+      "input": {
+        "global": {
+          "gifts": {
+            "perCurrency": {
+              "USDT": {
+                "min": "1",
+                "max": "5000"
+              },
+              "BTC": {
+                "min": "0.00001",
+                "max": null
+              }
+            }
+          },
+          "ads": {
+            "skins": [
+              {
+                "id": "gold",
+                "name": "Gold",
+                "style": {
+                  "border": "#d4af37"
+                },
+                "priceUsd": "2.5"
+              }
+            ]
+          },
+          "rewards": {
+            "advert": {
+              "exp": {
+                "mode": "DYNAMIC",
+                "amount": 2,
+                "everyUsd": "10"
+              },
+              "currency": {
+                "mode": "FIXED",
+                "amount": 1,
+                "everyUsd": "1"
+              }
+            },
+            "gift": {
+              "exp": {
+                "mode": "FIXED",
+                "amount": 0,
+                "everyUsd": "1"
+              },
+              "currency": {
+                "mode": "FIXED",
+                "amount": 0,
+                "everyUsd": "1"
+              }
+            }
+          },
+          "bot": {
+            "profileUserId": "0192f6a0-0000-7000-8000-00000000aa01"
+          }
+        }
+      },
+      "valid": true
+    },
+    {
+      "name": "the chat bot profile is a user id",
+      "schema": "settingsDocument",
+      "input": {
+        "global": {
+          "bot": {
+            "profileUserId": "orebit-bot"
+          }
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "no controls under maintenance by default",
+      "schema": "roomConfig",
+      "input": {},
+      "valid": true,
+      "expect": {
+        "controlsMaintenance": []
+      }
+    },
+    {
+      "name": "room controls can be put under maintenance",
+      "schema": "roomConfig",
+      "input": {
+        "controlsMaintenance": [
+          "ADS",
+          "GIF",
+          "COMMANDS"
+        ]
+      },
+      "valid": true,
+      "expect": {
+        "controlsMaintenance": [
+          "ADS",
+          "GIF",
+          "COMMANDS"
+        ]
+      }
+    },
+    {
+      "name": "an unknown room control is refused",
+      "schema": "roomConfig",
+      "input": {
+        "controlsMaintenance": [
+          "CHAT"
+        ]
+      },
+      "valid": false
+    },
+    {
+      "name": "ads under maintenance may pause existing ads",
+      "schema": "settingsDocument",
+      "input": {
+        "global": {
+          "maintenance": {
+            "ads": "MAINTENANCE",
+            "adsOnStop": "PAUSE",
+            "adsOnResume": "RESET_RESUME"
+          }
+        }
+      },
+      "valid": true
+    },
+    {
+      "name": "ads turned off cannot pause existing ads",
+      "schema": "settingsDocument",
+      "input": {
+        "global": {
+          "maintenance": {
+            "ads": "DISABLED",
+            "adsOnStop": "PAUSE"
+          }
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "an unknown ads stop choice is refused",
+      "schema": "settingsDocument",
+      "input": {
+        "global": {
+          "maintenance": {
+            "adsOnStop": "KEEP"
+          }
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "separate message, tag and user-history days per role",
+      "schema": "settingsDocument",
+      "input": {
+        "global": {
+          "staffRoles": {
+            "SUPPORT": {
+              "permissions": {
+                "VIEW_USER_HISTORY": "ACT",
+                "USER_MESSAGES": "ACT"
+              },
+              "maxBanHours": 24,
+              "penaltyScope": "BELOW",
+              "historyDays": 30,
+              "messageHistoryDays": 7,
+              "tagHistoryDays": 14,
+              "userHistoryFeatures": [
+                "FAUCET",
+                "SL"
+              ],
+              "userHistoryDays": 60,
+              "pinRoomIds": [],
+              "rulesRoomIds": [],
+              "restrictableCommands": [],
+              "groupPrivilege": false,
+              "visibleStats": []
+            }
+          }
+        }
+      },
+      "valid": true
+    },
+    {
+      "name": "a user-history feature id must be a simple id",
+      "schema": "settingsDocument",
+      "input": {
+        "global": {
+          "staffRoles": {
+            "SUPPORT": {
+              "permissions": {
+                "VIEW_USER_HISTORY": "ACT",
+                "USER_MESSAGES": "ACT"
+              },
+              "maxBanHours": 24,
+              "penaltyScope": "BELOW",
+              "historyDays": 30,
+              "messageHistoryDays": 7,
+              "tagHistoryDays": 14,
+              "userHistoryFeatures": [
+                "faucet history!"
+              ],
+              "userHistoryDays": 60,
+              "pinRoomIds": [],
+              "rulesRoomIds": [],
+              "restrictableCommands": [],
+              "groupPrivilege": false,
+              "visibleStats": []
+            }
+          }
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "a staff role table that names ASSIGN_ROLES is refused (chat roles are given in the admin panel only)",
+      "schema": "settingsDocument",
+      "input": {
+        "global": {
+          "staffRoles": {
+            "MODERATOR": {
+              "permissions": {
+                "ASSIGN_ROLES": "ACT"
+              },
+              "maxBanHours": 24,
+              "penaltyScope": "BELOW",
+              "historyDays": 30,
+              "pinRoomIds": [],
+              "rulesRoomIds": [],
+              "restrictableCommands": [],
+              "groupPrivilege": false,
+              "visibleStats": []
+            }
+          }
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "a staff role table with the pin, history and staff-room permissions is accepted",
+      "schema": "settingsDocument",
+      "input": {
+        "global": {
+          "staffRoles": {
+            "MODERATOR": {
+              "permissions": {
+                "PIN": "ACT",
+                "SEE_HISTORY": "REPORT",
+                "JOIN_STAFF_ROOM": "ACT"
+              },
+              "maxBanHours": 24,
+              "penaltyScope": "BELOW",
+              "historyDays": 30,
+              "pinRoomIds": [],
+              "rulesRoomIds": [],
+              "restrictableCommands": [],
+              "groupPrivilege": false,
+              "visibleStats": []
+            }
+          }
+        }
+      },
+      "valid": true
+    },
+    {
+      "name": "ads money numbers are optional and have no built-in value (null until the admin sets them)",
+      "schema": "settingsDocument",
+      "input": {
+        "global": {
+          "ads": {
+            "jobPageSize": null,
+            "jobBudgetSeconds": null,
+            "jobStaleMinutes": null,
+            "pendingPaymentMinutes": null,
+            "refundCurrencies": []
+          }
+        }
+      },
+      "valid": true,
+      "expect": {
+        "global": {
+          "ads": {
+            "jobPageSize": null
+          }
+        }
+      }
+    },
+    {
+      "name": "the ads job numbers are bounded",
+      "schema": "settingsDocument",
+      "input": {
+        "global": {
+          "ads": {
+            "jobPageSize": 5000
+          }
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "a refund currency is a currency code",
+      "schema": "settingsDocument",
+      "input": {
+        "global": {
+          "ads": {
+            "refundCurrencies": [
+              "usdt"
+            ]
+          }
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "the mute and block caps default to 1,000 each and are bounded",
+      "schema": "settingsDocument",
+      "input": {
+        "global": {
+          "commands": {
+            "maxMutes": 50,
+            "maxBlocks": 2000
+          }
+        }
+      },
+      "valid": true,
+      "expect": {
+        "global": {
+          "commands": {
+            "maxMutes": 50,
+            "maxBlocks": 2000
+          }
+        }
+      }
+    },
+    {
+      "name": "a list cap of 0 is refused",
+      "schema": "settingsDocument",
+      "input": {
+        "global": {
+          "commands": {
+            "maxMutes": 0
+          }
+        }
+      },
+      "valid": false
+    }
+  ]
+}

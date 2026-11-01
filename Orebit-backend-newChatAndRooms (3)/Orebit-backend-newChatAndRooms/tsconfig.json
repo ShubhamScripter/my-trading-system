@@ -1,0 +1,27 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "module": "node16",
+    "moduleResolution": "node16",
+    "outDir": "./dist",
+    "rootDir": "./",
+
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
+
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "sourceMap": true,
+    "declaration": false
+  },
+  "include": ["src/**/*.ts", "auth/**/*.ts", "db/**/*.ts", "redis/**/*.ts", "tests/**/*.ts"],
+  "exclude": ["node_modules", "dist"]
+}

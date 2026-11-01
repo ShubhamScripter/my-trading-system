@@ -1,0 +1,81 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main, qa]
+  push:
+    branches: [main, qa]
+  # Advisories are published against code that has not changed, so a repository
+  # that only audits on push goes stale the moment nobody is committing. This is
+  # the job that catches a CVE filed against a dependency we already shipped.
+  schedule:
+    - cron: '0 6 * * 1'
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Typecheck, lint and test
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # The generated Prisma client is a build artifact, and `tsc` reports a wall
+      # of phantom errors without it — every `prisma.x` property appears missing.
+      - name: Generate the Prisma client
+        run: npm run prisma:generate
+
+      - run: npm run typecheck
+
+      - run: npm run lint
+
+      # No `--env-file`. `src/config.ts` parses process.env at import time and
+      # exits when a required key is absent, but tests/setup.ts assigns every key
+      # at top level — before any import of config can run — so the suite is
+      # self-contained. Pointing this at .env.example instead would make CI depend
+      # on that file staying in sync with the schema.
+      - run: npm test
+
+  audit:
+    name: Dependency audit
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # ─── The gate ────────────────────────────────────────────────────────────
+      #
+      # Production dependencies, failing on high and above.
+      #
+      # Not a bare `npm audit --audit-level=high`, because one high-severity
+      # advisory in the tree currently has no released fix, and a gate that cannot
+      # pass is a gate people route around — the first thing they route around it
+      # for is the real finding. scripts/audit.mjs holds the exceptions, each with a
+      # reason and an expiry date, and fails when an exception expires or stops
+      # matching. See the ALLOWLIST in that file for what is currently accepted.
+      - name: Audit production dependencies
+        run: npm run audit
+
+      # ─── The report ──────────────────────────────────────────────────────────
+      #
+      # Everything including dev, never fails. Visibility without a veto: a flaw in
+      # a build tool is worth knowing about and is not worth blocking a release for.
+      - name: Report all advisories, including dev
+        if: always()
+        run: npm audit || true

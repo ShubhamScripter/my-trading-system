@@ -1,0 +1,13 @@
+-- Owner-applied template, not an automatic migration. No roles or credentials are created.
+-- Apply after Deposit provisions orebit_deposit_user_runtime and Ledger finishes its grants.
+-- This is a Deposit metadata exception, not a change to the generic Ledger runtime contract.
+\set ON_ERROR_STOP on
+BEGIN;
+GRANT USAGE ON SCHEMA wallet_core, price_conversion TO orebit_deposit_user_runtime;
+GRANT SELECT ON wallet_core.currency_settings, wallet_core.currencies,
+  wallet_core.chains, wallet_core.wallet_settings TO orebit_deposit_user_runtime;
+GRANT SELECT (id, symbol, kind, pricing_status, auto_disabled)
+  ON price_conversion.currencies TO orebit_deposit_user_runtime;
+COMMIT;
+-- No Wallet writer membership, write privileges, price evidence reads or new price functions.
+-- This additive template does not remove any excess grants already present on the role.

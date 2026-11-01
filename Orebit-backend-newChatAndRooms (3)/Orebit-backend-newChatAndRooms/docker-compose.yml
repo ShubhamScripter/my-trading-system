@@ -1,0 +1,51 @@
+# Both instances are bound to 127.0.0.1 and password-protected.
+#
+# Publishing on all interfaces was not a theoretical exposure: this cache holds
+# OAuth `state`, parked OAuth identities mid-link, and session-revocation flags.
+# Read access to it is read access to in-flight authentication material, and
+# delete access lets someone clear a revoked session's deny-flag.
+#
+# REDIS_PASSWORD is read from .env; the fallback exists so a fresh clone comes up
+# without configuration. Do not use the fallback anywhere but a local machine.
+services:
+  redis-cache:
+    image: redis:7-alpine
+    container_name: orebit-redis-cache
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:6379:6379"
+    command: >
+      redis-server
+      --requirepass "${REDIS_PASSWORD:-orebit-local-dev}"
+      --save ""
+      --appendonly no
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-orebit-local-dev}", "--no-auth-warning", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  redis-durable:
+    image: redis:7-alpine
+    container_name: orebit-redis-durable
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:6380:6379"
+    volumes:
+      - redis_durable_data:/data
+    command: >
+      redis-server
+      --requirepass "${REDIS_PASSWORD:-orebit-local-dev}"
+      --appendonly yes
+      --appendfsync everysec
+      --maxmemory-policy noeviction
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-orebit-local-dev}", "--no-auth-warning", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  redis_durable_data:

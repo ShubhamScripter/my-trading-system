@@ -1,0 +1,838 @@
+// OREBiT admin — database schema
+//
+// DDL that Prisma cannot express — partial unique indexes, today — lives in
+// db/sql/*.sql and is applied file by file, in lexicographic order, after every
+// migration by db/migrate.ts.
+//
+// Conventions (shared with the main Orebit backend):
+//   ids     uuid holding a UUIDv7 from src/utils/public.utils.ts's uuidv7().
+//           Time-ordered, so inserts stay at the right edge of the B-tree. Never
+//           gen_random_uuid() and never node:crypto's randomUUID(), which is v4
+//           and scatters writes.
+//   time    DateTime @db.Timestamptz, stored UTC.
+//   delete  deletedAt DateTime? plus a partial index WHERE deleted_at IS NULL.
+//   naming  snake_case columns via @map, plural table names via @@map.
+//   casing  a user-supplied identifier is stored twice — `x` as typed for display,
+//           `xLower` normalised, and the normalised one carries uniqueness.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+
+  // `prisma migrate` needs advisory locks and session state that transaction
+  // pooling does not preserve, so it must be able to bypass a pooler.
+  directUrl = env("DATABASE_DIRECT_URL")
+
+  // ONLY `admin`. This database also holds `identity`, owned by the main Orebit
+  // backend, and those models are deliberately absent from this file: two Prisma
+  // clients modelling one table is two sources of truth, and whichever migrates
+  // second wins. When an admin feature needs to read a user, it does so with a
+  // read-only raw query rather than by claiming the schema here.
+  //
+  // Note also that DATABASE_URL must carry `?schema=admin` — that is what keeps
+  // this service's `_prisma_migrations` history separate from the main backend's.
+  // src/config.ts refuses to boot without it.
+  schemas = ["admin"]
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// admin — staff accounts, credentials, second factors, sessions
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// One row per staff account.
+///
+/// There is no self-registration and no public signup route. Rows are created by
+/// db/seed.ts, which is the entire provisioning story for now — so this model has
+/// none of the consumer `User`'s username, public code or referral machinery.
+/// An admin is identified by email and nothing else.
+///
+/// Uniqueness for `emailLower` is a PARTIAL unique index in db/sql/admin.sql, not
+/// a column constraint here. A plain `@unique` would keep a soft-deleted admin's
+/// address reserved forever, so removing someone would permanently burn their
+/// email and they could never be re-added.
+model Admin {
+  id String @id @db.Uuid
+
+  email      String
+  /// Normalised copy; carries the unique index and is what every lookup matches.
+  emailLower String @map("email_lower")
+
+  /// Display name, for the admin UI and the audit trail that comes later.
+  name String
+
+  role   AdminRole   @default(ADMIN)
+  status AdminStatus @default(ACTIVE)
+
+  /// ═══ MANUAL REVIEW ════════════════════════════════════════════════════════
+  ///
+  /// Set when a SECOND password lockout lands inside the strike memory (see
+  /// `AdminCredential.lockoutStrikes`). At that point the account stops being
+  /// something a wait can restore: `status` goes to DISABLED and a super admin has
+  /// to decide, through `POST /admins {action:'resolve-login-review'}`.
+  ///
+  /// ─── Why these live HERE and not on AdminCredential ─────────────────────────
+  ///
+  /// Because of who has to read them. Three paths must refuse a reviewed account —
+  /// `LoginService.resolve` (every step after the password), `SessionService.rotate`
+  /// (refresh), and `AdminsService.authorise` — and all three already load an
+  /// `Admin` and nothing else. On the credential, each would need a second read for
+  /// a check they must never skip, which is precisely the shape of check people
+  /// forget to add. The strike COUNTERS stay on the credential, because those are
+  /// password-lock mechanics and only the password path touches them.
+  ///
+  /// Null means no review has ever been opened. RESOLVED and REJECTED are both
+  /// terminal for one review and are retained rather than nulled — "was this account
+  /// ever taken out of service, and who put it back" is the question an audit asks.
+  loginReviewStatus   AdminLoginReviewStatus?   @map("login_review_status")
+  loginDisabledAt     DateTime?                 @map("login_disabled_at") @db.Timestamptz
+  loginDisabledReason AdminLoginDisabledReason? @map("login_disabled_reason")
+
+  /// Optimistic-concurrency guard for the resolve action.
+  ///
+  /// A super admin sends the version they read; the update names it in its WHERE
+  /// clause and refuses when it has moved. Without it, two super admins looking at
+  /// the same review list can both act and the second silently overwrites the first
+  /// — including in the direction that re-enables an account someone just chose to
+  /// keep disabled.
+  reviewVersion Int       @default(1) @map("review_version")
+  reviewedAt    DateTime? @map("reviewed_at") @db.Timestamptz
+  /// The super admin who decided. No relation declared: this points at an admin who
+  /// may later be soft-deleted, and a foreign key would either block that or cascade
+  /// the audit trail away with them.
+  reviewedBy    String?   @map("reviewed_by") @db.Uuid
+  reviewReason  String?   @map("review_reason")
+
+  /// Set the first time this admin completes the email-OTP step. Null means the
+  /// address has never been proven — true for a freshly seeded account.
+  emailVerifiedAt DateTime? @map("email_verified_at") @db.Timestamptz
+
+  /// Set when the FIRST second factor is confirmed. Null means this admin has
+  /// never completed enrollment, which is what routes their next sign-in to the
+  /// forced-enrollment branch.
+  ///
+  /// Derived from the factor tables and therefore redundant — kept anyway because
+  /// `verify-email` has to answer "enroll or authenticate?" on every sign-in, and
+  /// that question should not cost two joins. `totp-enroll`'s downgrade guard
+  /// deliberately does NOT read this: it counts confirmed factors directly, so a
+  /// stale value here can never widen what enrollment is allowed to do.
+  mfaEnrolledAt DateTime? @map("mfa_enrolled_at") @db.Timestamptz
+
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  lastSeenAt DateTime? @map("last_seen_at") @db.Timestamptz
+  deletedAt  DateTime? @map("deleted_at") @db.Timestamptz
+
+  credentials     AdminCredential[]
+  totpFactors     AdminTotpFactor[]
+  passkeys        AdminPasskey[]
+  sessions        AdminSession[]
+  /// The stable login records. `sessions` above are the refresh GENERATIONS that
+  /// hang off these — see `AdminSessionFamily`.
+  sessionFamilies AdminSessionFamily[]
+  challenges      AdminChallenge[]
+  loginAttempts   AdminLoginAttempt[]
+  authEvents      AdminAuthEvent[]
+
+  @@index([status, createdAt])
+  @@map("admins")
+  @@schema("admin")
+}
+
+enum AdminLoginReviewStatus {
+  /// Awaiting a super admin. The account is DISABLED while this holds.
+  PENDING
+  /// A super admin re-enabled the account.
+  RESOLVED
+  /// A super admin looked and chose to leave it disabled.
+  REJECTED
+
+  @@schema("admin")
+}
+
+enum AdminLoginDisabledReason {
+  /// Two password lockouts inside `LOCKOUT.STRIKE_MEMORY_SECONDS`.
+  REPEATED_PASSWORD_LOCKOUT
+  /// Declared for the `POST /admins {action:'disable'}` path to grow into. Nothing
+  /// writes it yet — the value exists so `loginDisabledReason` is never re-typed to
+  /// accommodate the second reason an account can be out of service.
+  MANUAL_DISABLE
+
+  @@schema("admin")
+}
+
+enum AdminRole {
+  /// May manage other admins. Seeded; there is no route that grants it yet.
+  SUPER_ADMIN
+  ADMIN
+
+  @@schema("admin")
+}
+
+enum AdminStatus {
+  ACTIVE
+  /// Refused at the password step, before any code is sent. Reachable only by a
+  /// direct database write today — there is no disable route yet, but the state
+  /// must exist now so `status` is never re-typed later.
+  DISABLED
+
+  @@schema("admin")
+}
+
+/// The password. One row per (admin, kind), and unlike the consumer schema an
+/// admin ALWAYS has one — accounts are seeded with a password, never without.
+///
+/// A missing row is therefore not a passwordless account to be routed around; it
+/// is an anomaly, and `invalid_credentials` is the correct answer to it.
+model AdminCredential {
+  id      String @id @db.Uuid
+  adminId String @map("admin_id") @db.Uuid
+  admin   Admin  @relation(fields: [adminId], references: [id], onDelete: Cascade)
+
+  kind         AdminCredentialKind @default(PASSWORD)
+  /// argon2id encoded string — carries its own salt and parameters, which is why
+  /// there is no separate salt column. The pepper is argon2's `secret` parameter
+  /// and is NOT recorded here, so it stays rotatable.
+  passwordHash String              @map("password_hash")
+  passwordAlgo String              @default("argon2id") @map("password_algo")
+
+  /// Durable lockout state. In the database rather than Redis on purpose: it must
+  /// keep enforcing with the cache down, which is exactly when a brute-force
+  /// attempt is most likely to be tried.
+  failedAttempts Int       @default(0) @map("failed_attempts")
+  lockedUntil    DateTime? @map("locked_until") @db.Timestamptz
+
+  /// ═══ THE LOCKOUT'S MEMORY ═════════════════════════════════════════════════
+  ///
+  /// `failedAttempts` resets to zero as each lock is applied, so on its own the
+  /// policy is flat: ten wrong passwords costs an hour, forever, no matter how many
+  /// times the same account has been ground at. These two columns are what make the
+  /// second lock mean something different from the first.
+  ///
+  /// `lockoutStrikes` counts locks, not attempts, and is deliberately NOT cleared by
+  /// a successful sign-in — a correct password proves the account's owner turned up,
+  /// not that the grinding stopped. Only a super admin resolving a review clears it.
+  ///
+  /// `lockoutStrikeAt` is what bounds the memory: a strike older than
+  /// `LOCKOUT.STRIKE_MEMORY_SECONDS` is spent, and the next lock is a first offence
+  /// again. Without it an account that was locked once, a year ago, would go straight
+  /// to manual review the next time somebody fat-fingered their password ten times.
+  lockoutStrikes  Int       @default(0) @map("lockout_strikes")
+  lockoutStrikeAt DateTime? @map("lockout_strike_at") @db.Timestamptz
+
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz
+
+  @@unique([adminId, kind])
+  @@map("admin_credentials")
+  @@schema("admin")
+}
+
+enum AdminCredentialKind {
+  PASSWORD
+  /// TOTP and passkeys are NOT members here — they have their own tables, because
+  /// their storage requirements are genuinely different (one is reversibly
+  /// encrypted, the other is a public key with a signature counter). Folding them
+  /// into a `passwordHash` column would mean a column that means three things.
+
+  @@schema("admin")
+}
+
+/// A TOTP authenticator, per RFC 6238.
+///
+/// ─── Why the secret is encrypted rather than hashed ─────────────────────────
+///
+/// This is the one secret in the service that cannot be hashed. Verification
+/// recomputes HMAC-SHA1 over the shared secret and the current time step, so the
+/// server must be able to RECOVER it — a one-way hash would make verification
+/// impossible. It is therefore encrypted with AES-256-GCM under
+/// `config.TOTP_SECRET_KEY`, and the three columns below are that envelope.
+///
+/// The consequence, which belongs on the record: a database leak plus a leak of
+/// TOTP_SECRET_KEY hands over every authenticator. Keep them in different places.
+model AdminTotpFactor {
+  id      String @id @db.Uuid
+  adminId String @map("admin_id") @db.Uuid
+  admin   Admin  @relation(fields: [adminId], references: [id], onDelete: Cascade)
+
+  /// AES-256-GCM envelope. Separate columns rather than one concatenated blob so
+  /// that a future key rotation can be written as a plain UPDATE per row.
+  secretCiphertext Bytes @map("secret_ciphertext")
+  secretIv         Bytes @map("secret_iv")
+  secretTag        Bytes @map("secret_tag")
+
+  /// What the admin named this authenticator. Cosmetic.
+  label String @default("Authenticator")
+
+  /// Null until a code generated from this secret has been verified once.
+  ///
+  /// An UNCONFIRMED factor grants nothing: it does not satisfy a sign-in, and it
+  /// does not count toward "is enrolled". That is what makes an abandoned
+  /// enrollment harmless — the QR code was scanned, the tab was closed, and the
+  /// account is exactly where it was.
+  confirmedAt DateTime? @map("confirmed_at") @db.Timestamptz
+
+  /// The RFC 6238 time-step counter of the last code accepted.
+  ///
+  /// This is the replay defence, and it is a column rather than a cache entry
+  /// because it must survive a Redis flush. Verification refuses any step `<=`
+  /// this value, so a code shoulder-surfed or captured in transit cannot be
+  /// spent a second time inside the 30-second step it belongs to. That step is
+  /// the whole of a code's life — `TOTP.WINDOW` is 0, so nothing is accepted
+  /// once the authenticator has rolled over.
+  ///
+  /// Updated by a CONDITIONAL update (`WHERE last_used_step < :step`), never by
+  /// read-then-write — two concurrent requests presenting the same code must not
+  /// both observe the old value and both pass.
+  lastUsedStep BigInt?   @map("last_used_step")
+  lastUsedAt   DateTime? @map("last_used_at") @db.Timestamptz
+
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz
+
+  @@index([adminId, confirmedAt])
+  @@map("admin_totp_factors")
+  @@schema("admin")
+}
+
+/// A registered passkey (WebAuthn credential).
+///
+/// No secret is stored here at all, which is the whole appeal of the mechanism:
+/// `publicKey` is public, and the private half never leaves the authenticator.
+/// A full dump of this table lets an attacker verify assertions, not forge them.
+model AdminPasskey {
+  id      String @id @db.Uuid
+  adminId String @map("admin_id") @db.Uuid
+  admin   Admin  @relation(fields: [adminId], references: [id], onDelete: Cascade)
+
+  /// The authenticator's own credential ID, base64url. Unique among live rows via
+  /// a partial index — partial so that removing a passkey (a soft delete) does not
+  /// permanently bar the owner from registering that same authenticator again.
+  credentialId String @map("credential_id")
+  /// COSE-encoded public key, as returned by @simplewebauthn/server.
+  publicKey    Bytes  @map("public_key")
+
+  /// The authenticator's signature counter.
+  ///
+  /// Stored so a DECREASE can be detected, which is the documented signal of a
+  /// cloned authenticator. It is logged rather than hard-failed: a large number of
+  /// authenticators — most platform ones, and every passkey synced through a
+  /// password manager — legitimately report a permanent 0, so refusing on a
+  /// non-increase would lock out the most common hardware in use.
+  signCount BigInt @default(0) @map("sign_count")
+
+  /// How the browser said it can talk to this authenticator: usb, nfc, ble,
+  /// internal, hybrid. Passed back in `allowCredentials` so the browser can
+  /// prompt for the right thing instead of offering every option.
+  transports String[] @default([])
+  /// The authenticator model's identifier. Provenance only — nothing gates on it.
+  aaguid     String?
+
+  label String @default("Passkey")
+
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  lastUsedAt DateTime? @map("last_used_at") @db.Timestamptz
+  deletedAt  DateTime? @map("deleted_at") @db.Timestamptz
+
+  @@index([adminId])
+  @@map("admin_passkeys")
+  @@schema("admin")
+}
+
+/// THE step-up state machine: one row per in-flight sign-in.
+///
+/// ─── What this table is for ─────────────────────────────────────────────────
+///
+/// Between "password accepted" and "second factor proven" the caller is partially
+/// authenticated, and that state has to live somewhere. It must NOT be an access
+/// token — anything the client can present as a bearer would make the remaining
+/// factors optional to whoever holds it. So it is a server-side row, and the
+/// client holds only an opaque secret pointing at it.
+///
+/// `state` is what makes skipping impossible: each step declares which states it
+/// is legal from (see STEP_REQUIRES in auth/auth.types.ts), so asking for
+/// `totp-verify` while still at PASSWORD_VERIFIED is refused by a table lookup
+/// rather than by a conditional someone can forget to write.
+model AdminLoginAttempt {
+  id      String @id @db.Uuid
+  adminId String @map("admin_id") @db.Uuid
+  admin   Admin  @relation(fields: [adminId], references: [id], onDelete: Cascade)
+
+  state AdminLoginState @default(PASSWORD_VERIFIED)
+
+  /// sha256 of the secret held in the client's `orebit_admin_step` cookie.
+  ///
+  /// Only the HASH is stored, for the same reason passwords are hashed: a
+  /// database leak must not hand over live credentials. The row's primary key
+  /// never leaves the server, so a leaked response body cannot be used to drive
+  /// somebody else's sign-in either.
+  ///
+  /// Nulled on completion and on expiry — a spent secret is not a credential any
+  /// more, and leaving it behind would only be a thing to leak. Uniqueness among
+  /// live rows is the partial index `ix_admin_login_attempts_stepup`.
+  stepUpSecretHash String? @map("step_up_secret_hash")
+
+  /// Wrong second-factor guesses on this attempt. On the row, not only in Redis,
+  /// so the cap survives a cache flush.
+  mfaAttempts Int @default(0) @map("mfa_attempts")
+
+  /// Sign-in codes emailed for this attempt, and when the last one went out.
+  /// The per-account budget in Redis is the real limit; these drive the
+  /// user-facing "N resends remaining" and the cooldown display.
+  ///
+  /// Defaults to 0 and is incremented by the send itself, so the count always
+  /// means "codes actually emailed". A default of 1 would pre-count the first
+  /// code AND have it counted again when sent.
+  otpSentCount  Int       @default(0) @map("otp_sent_count")
+  lastOtpSentAt DateTime? @map("last_otp_sent_at") @db.Timestamptz
+
+  /// Which factor finished the ceremony. Null until it does. Copied onto the
+  /// session so "how did this session come to exist" is answerable later.
+  mfaMethod AdminMfaMethod? @map("mfa_method")
+
+  /// Recorded for the audit trail and for the "sign-in from an unusual address"
+  /// rule the product will want. Nothing gates on them yet.
+  ipAddress String  @map("ip_address") @db.Inet
+  userAgent String? @map("user_agent") @db.VarChar(256)
+
+  /// Set when a session is issued. From that point this row is history, and it is
+  /// retained rather than deleted — a record of every sign-in, successful or not.
+  completedAt DateTime? @map("completed_at") @db.Timestamptz
+  expiresAt   DateTime  @map("expires_at") @db.Timestamptz
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@index([adminId, createdAt])
+  @@map("admin_login_attempts")
+  @@schema("admin")
+}
+
+enum AdminLoginState {
+  /// Password and captcha accepted; an email code has been sent.
+  PASSWORD_VERIFIED
+  /// Email code accepted. The only state from which a second factor may be
+  /// verified or enrolled.
+  EMAIL_VERIFIED
+  /// A session was issued. Terminal.
+  COMPLETED
+  /// Ran out of time, or was superseded. Terminal.
+  EXPIRED
+
+  @@schema("admin")
+}
+
+enum AdminMfaMethod {
+  TOTP
+  PASSKEY
+
+  @@schema("admin")
+}
+
+/// Post-account one-time codes. Only the sign-in email OTP is issued now — the
+/// password-reset flow was removed.
+///
+/// `consumedAt` is the terminal marker: spent challenges are retained, not
+/// deleted, so "was a code ever issued for this account" stays answerable after
+/// the fact.
+model AdminChallenge {
+  id      String @id @db.Uuid
+  adminId String @map("admin_id") @db.Uuid
+  admin   Admin  @relation(fields: [adminId], references: [id], onDelete: Cascade)
+
+  purpose AdminChallengePurpose
+
+  /// sha256 of the code plus the pepper. Never the code itself.
+  codeHash   String    @map("code_hash")
+  expiresAt  DateTime  @map("expires_at") @db.Timestamptz
+  attempts   Int       @default(0)
+  consumedAt DateTime? @map("consumed_at") @db.Timestamptz
+
+  /// The address the code was requested from.
+  ipAddress String   @map("ip_address") @db.Inet
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([adminId, purpose, consumedAt])
+  @@map("admin_challenges")
+  @@schema("admin")
+}
+
+enum AdminChallengePurpose {
+  LOGIN_EMAIL_OTP
+
+  /// HISTORICAL — no longer issued. The password-reset flow was removed, but the
+  /// value stays declared so rows written before that removal keep deserialising.
+  /// Postgres has no `ALTER TYPE ... DROP VALUE`, so dropping it means recreating
+  /// the type and rewriting the column, which is not worth doing for a value
+  /// nothing can write any more.
+  PASSWORD_RESET
+
+  @@schema("admin")
+}
+
+/// ═══ ONE ROW PER AUTHENTICATED BROWSER LOGIN ═════════════════════════════════
+///
+/// The STABLE identity of a sign-in, and the row that makes revocation correct.
+/// Created once, by the three-factor ceremony; its id never changes, and a refresh
+/// does NOT create one. The disposable per-rotation records are `AdminSession`.
+///
+/// ─── Why this row exists at all ────────────────────────────────────────────
+///
+/// It is a LOCK TARGET before it is anything else. A family used to be a mere
+/// convention — the set of `admin_sessions` rows sharing a `family_id`, which was
+/// itself just the first generation's id — and a convention cannot be locked.
+///
+/// That is the whole of the revocation race this table fixes. `rotate` inserts the
+/// child generation inside a transaction, so under READ COMMITTED a concurrent
+/// logout's `UPDATE ... WHERE family_id = ?` can neither SEE that row nor BLOCK on
+/// it: it is not in the statement's snapshot, and Postgres has no predicate locking
+/// below SERIALIZABLE. EvalPlanQual rescues the rows the scan already found; it does
+/// not re-run the scan. So logout revoked the parent, reported success, and the
+/// child stayed usable for the rest of the family ceiling.
+///
+/// With this row, both operations take `SELECT ... FOR UPDATE` on it FIRST, so one
+/// of them always waits for the other — and whichever waits observes the other's
+/// committed effect. See the lock-order header in
+/// auth/persistence/session.dboperation.ts.
+///
+/// ─── What deliberately is NOT here ─────────────────────────────────────────
+///
+/// Both clocks (`expiresAt`, `reauthenticateAt`), `lastActiveAt`, the MFA method and
+/// every elevation fact stay on `AdminSession`. They are a separate concern from
+/// revocation and moving them is a separate change; this table carries IDENTITY and
+/// REVOCATION STATE, and nothing else, so that the one invariant it exists to hold
+/// is the only thing that can be wrong with it:
+///
+///   revokedAt IS NOT NULL  ⟹  every generation in this family is revoked
+///
+/// `reauthenticateAt` is absent for the same reason rather than copied for
+/// tidiness: it would have no reader, and every generation already carries it.
+model AdminSessionFamily {
+  id      String @id @db.Uuid
+  adminId String @map("admin_id") @db.Uuid
+  admin   Admin  @relation(fields: [adminId], references: [id], onDelete: Cascade)
+
+  /// The sign-in instant. Unlike a generation's `createdAt`, this one does not move
+  /// when tokens are refreshed, so it is the age of the LOGIN.
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  /// Authoritative for the whole family. Set under the row lock, in the same
+  /// transaction that revokes the generations, which is what makes the invariant
+  /// above hold rather than merely usually hold.
+  revokedAt     DateTime? @map("revoked_at") @db.Timestamptz
+  /// Same vocabulary as `AdminSession.revokedReason` — LOGOUT | LOGOUT_ALL |
+  /// REUSE_DETECTED | PASSWORD_CHANGED. Read by `rotate` when it aborts against a
+  /// revoked family, so the refusal can say which kind of revocation ended the
+  /// session rather than falling back to the generic message.
+  revokedReason String?   @map("revoked_reason") @db.VarChar(32)
+
+  generations AdminSession[]
+
+  /// No `@@index` here. The only query is `WHERE admin_id = ? AND revoked_at IS NULL
+  /// ORDER BY id FOR UPDATE`, which wants a PARTIAL COVERING index Prisma cannot
+  /// express — `ix_admin_session_families_live` in db/sql/admin.sql. The trailing
+  /// `id` there removes the Sort node, which is what makes lock ACQUISITION order
+  /// deterministic and rules out a deadlock between two logout-all sweeps.
+  @@map("admin_session_families")
+  @@schema("admin")
+}
+
+/// One row per rotation *generation* in a refresh chain. `familyId` is constant
+/// across every rotation (it is the id of the first generation), so presenting an
+/// already-rotated refresh token can revoke the entire chain at once.
+///
+/// There is deliberately no `tokenHash` column. The service issues a signed
+/// access/refresh JWT pair and stores neither half; this row is what a token
+/// *points at*, and its only jobs are to make a generation revocable and to make
+/// a replay detectable.
+///
+/// `revokedAt` is this table's archival column and is deliberately not called
+/// `deletedAt`: a revoked session is kept forever and stays queryable.
+model AdminSession {
+  id       String             @id @db.Uuid
+  adminId  String             @map("admin_id") @db.Uuid
+  admin    Admin              @relation(fields: [adminId], references: [id], onDelete: Cascade)
+  /// The STABLE login this generation belongs to. Constant across every rotation,
+  /// and now a real row rather than a convention — see `AdminSessionFamily`.
+  familyId String             @map("family_id") @db.Uuid
+  family   AdminSessionFamily @relation(fields: [familyId], references: [id], onDelete: Cascade)
+  /// Null on the first generation of a family.
+  parentId String?            @map("parent_id") @db.Uuid
+
+  /// Which second factor produced this session. Carried from the login attempt so
+  /// the question survives the attempt row being archived.
+  mfaMethod AdminMfaMethod @map("mfa_method")
+
+  /// sha256 of user-agent + accept-language. Coarse by construction — it informs
+  /// risk, it never authorises.
+  deviceFingerprint String  @map("device_fingerprint")
+  /// /24 for IPv4, /48 for IPv6. The prefix rather than the address, so a client
+  /// that changes IP mid-session is not treated as a new device.
+  ipClass           String  @map("ip_class")
+  userAgent         String? @map("user_agent") @db.VarChar(256)
+
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  /// The last eligible authenticated request, as the DATABASE observed it.
+  ///
+  /// Written once at sign-in (the login instant IS the first activity) and then at
+  /// most once per `ACTIVITY_WRITE_INTERVAL_SECONDS` by `SessionDbOperation.touch`,
+  /// whose WHERE clause is what enforces that interval. A rotation copies it from the
+  /// parent, so automatic token refresh is not activity.
+  ///
+  /// Deliberately has NO `@default(now())`. A default would let a writer that forgot
+  /// this field silently reset the activity clock — which for `rotate` would mean
+  /// every background refresh counted as activity, the one thing this column exists
+  /// to rule out. Without a default that omission is a compile error.
+  lastActiveAt     DateTime  @map("last_active_at") @db.Timestamptz
+  /// The IDLE deadline: `min(lastActiveAt + inactivity timeout, reauthenticateAt)`,
+  /// written in the same statement as `lastActiveAt` so the two cannot disagree.
+  /// Still the column every liveness check reads — the anchor moved to
+  /// `lastActiveAt`, the deadline did not move here.
+  expiresAt        DateTime  @map("expires_at") @db.Timestamptz
+  /// The ABSOLUTE ceiling for the family, and the reason there are two clocks here.
+  ///
+  /// Written once, by the three-factor sign-in that created the family's first
+  /// generation, and copied byte-for-byte into every child — no code path recomputes
+  /// it, which is the whole of what makes it immutable. Reaching it ends the session
+  /// regardless of how recently it was refreshed, and getting a new one means running
+  /// the full ceremony again: password + email OTP + MFA.
+  ///
+  /// Without it, `expiresAt` alone was a sliding twelve hours: a background refresh
+  /// pushed the wall forward faster than it arrived, so a tab left open never
+  /// re-authenticated at all.
+  reauthenticateAt DateTime  @map("reauthenticate_at") @db.Timestamptz
+  /// Set once this generation has been exchanged for a child. A second exchange
+  /// is by definition a replay.
+  rotatedAt        DateTime? @map("rotated_at") @db.Timestamptz
+  revokedAt        DateTime? @map("revoked_at") @db.Timestamptz
+  /// LOGOUT | LOGOUT_ALL | REUSE_DETECTED | PASSWORD_CHANGED. Free text rather
+  /// than an enum, so PASSWORD_RESET rows written before that flow was removed
+  /// still read back.
+  revokedReason    String?   @map("revoked_reason") @db.VarChar(32)
+
+  @@index([adminId, revokedAt])
+  @@index([familyId])
+  @@map("admin_sessions")
+  @@schema("admin")
+}
+
+/// ═══ THE AUTHENTICATION AUDIT TRAIL ═══════════════════════════════════════════
+///
+/// Append-only. Nothing in the service updates a row here, and `deletedAt` exists
+/// for a retention sweep rather than for anything a request can reach.
+///
+/// ─── What it is for ─────────────────────────────────────────────────────────
+///
+/// A super admin looking at a pending review has to answer "was this one person
+/// fumbling their password, or was it three hundred addresses from forty IPs?" —
+/// and `AdminCredential.failedAttempts` cannot answer it, because it resets to zero
+/// on every lock. This table is what `GET /admins/login-reviews` aggregates into the
+/// distinct-IP and distinct-device counts that make the decision possible.
+///
+/// ─── Why `adminId` is nullable ──────────────────────────────────────────────
+///
+/// An attempt against an address that is not an admin has no admin to attribute to,
+/// and those are exactly the rows that show enumeration. Dropping them would hide
+/// the pattern the table exists to surface.
+///
+/// ─── What must never be written here ────────────────────────────────────────
+///
+/// No password, no OTP code, no step-up secret, no token — not in a column, and not
+/// inside `metadata`. This table is read by a route that serves it to a human, so a
+/// secret landing in it is a secret in an API response. `metadata` is for slugs and
+/// counts.
+model AdminAuthEvent {
+  id String @id @db.Uuid
+
+  /// Null when the attempt named an address that is not a live admin.
+  adminId String? @map("admin_id") @db.Uuid
+  admin   Admin?  @relation(fields: [adminId], references: [id], onDelete: Cascade)
+
+  /// A stable slug — `ADMIN_LOGIN_PASSWORD_FAILURE` and friends. Free text rather
+  /// than an enum on purpose: a new event type must be cheap to add, and an enum
+  /// would make each one a migration on a table nothing gates on.
+  eventType String @map("event_type") @db.VarChar(64)
+
+  ipAddress     String  @map("ip_address") @db.Inet
+  /// The /24 or /48 prefix, as computed by `clientContextOf`. Recorded ALONGSIDE the
+  /// address rather than instead of it: the review summary counts distinct classes,
+  /// because a rotating residential IP within one block is one actor, not sixty.
+  ipClass       String  @map("ip_class") @db.VarChar(64)
+  /// `ClientContext.deviceFingerprint`. Coarse and trivially forgeable — it informs
+  /// the review summary, it never authorises.
+  deviceKeyHash String? @map("device_key_hash") @db.VarChar(64)
+  userAgent     String? @map("user_agent") @db.VarChar(256)
+
+  /// Which stage refused: `password`, `otp`, `mfa`, `refresh`. Null for events that
+  /// are not a refusal.
+  failureStage String? @map("failure_stage") @db.VarChar(32)
+  /// Ties a row back to the request that produced it in the application log.
+  requestId    String? @map("request_id") @db.VarChar(64)
+
+  metadata Json? @default("{}")
+
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz
+
+  @@index([adminId, createdAt])
+  @@index([eventType, createdAt])
+  @@map("admin_auth_events")
+  @@schema("admin")
+}
+
+/// Which captcha providers an operator has switched off, for BOTH backends.
+///
+/// This table can only ever SUBTRACT from the providers a service's env has
+/// configured. A provider is live iff that service has a secret for it in env AND
+/// it is not disabled here, so a row cannot enable a provider whose secret is
+/// missing — that would advertise a provider that then 503s every token it issued.
+/// Secrets stay in env, where they belong; this table holds a flag and nothing else.
+///
+/// An ABSENT row means ENABLED. That single choice is what makes an empty table, a
+/// missing table, a revoked SELECT and an unreachable database all mean the same
+/// safe thing: "nothing is disabled", which is exactly today's behaviour. It is also
+/// why no seed row is needed and why the deploy order between the two services does
+/// not matter in either direction.
+///
+/// READ BY THE CONSUMER BACKEND (../Orebit-backend) with a read-only raw query
+/// against `admin.admin_captcha_providers`. It deliberately does not model this
+/// table in its own Prisma schema — two clients modelling one table is two sources
+/// of truth, and whichever migrates second wins. Renaming a column here is a
+/// BREAKING CHANGE for that reader, and nothing in this repo's type system will
+/// tell you so.
+///
+/// Nothing writes this table through Prisma today. Toggling is a direct SQL write,
+/// the same provisioning story `AdminStatus.DISABLED` already has. A route for it
+/// belongs in src/admins/, which already has the SUPER_ADMIN gating and the
+/// elevation guard wired.
+///
+/// No `deletedAt`: `enabled` already expresses "off", and two ways to say the same
+/// thing is a bug generator. No `@updatedAt`: Prisma only applies it on writes it
+/// performs, so on a hand-written row it would silently lie.
+model AdminCaptchaProvider {
+  /// A `CAPTCHA_PROVIDERS` member. Varchar, not a Prisma enum, for the same reason
+  /// as `AdminAuthEvent.eventType` — adding a provider should not be a migration.
+  /// A value outside the const simply matches nothing and is ignored with a warning.
+  ///
+  /// The primary key, rather than the uuidv7 `id` every other model here carries.
+  /// That convention exists so high-volume inserts stay at the right edge of the
+  /// B-tree, which is meaningless for a four-row settings table — and because rows
+  /// are written by hand in `psql`, demanding a uuidv7 (with `gen_random_uuid()`
+  /// explicitly forbidden by the schema header) would leave an operator no way to
+  /// insert one at all.
+  provider String @id @db.VarChar(32)
+
+  enabled Boolean @default(true)
+
+  /// Why, for whoever finds this row at 3am.
+  reason String? @db.VarChar(256)
+
+  /// A note, never a join — deliberately NOT a foreign key, because the operator
+  /// making the SQL write may have no admin id to hand, and a constraint that
+  /// blocks an incident response is worse than an unverified string.
+  updatedByAdminId String? @map("updated_by_admin_id") @db.Uuid
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  /// `@default(now())` and not `@updatedAt` — see the note above.
+  updatedAt DateTime @default(now()) @map("updated_at") @db.Timestamptz
+
+  @@map("admin_captcha_providers")
+  @@schema("admin")
+}
+
+/// One row per country the platform recognises, with its two chosen flag assets.
+///
+/// ─── `isoCode` IS THE IDENTIFIER; `name` IS NOT ────────────────────────────
+///
+/// `name` is display text and nothing else — never matched on, never part of a key, and
+/// re-spellable without consequence. `isoCode` carries the uniqueness.
+///
+/// ─── THE BUCKET IS A LIBRARY; THIS TABLE RECORDS WHAT WAS CHOSEN ──────────
+///
+/// The image keys are NOT derived from `isoCode`. Assets live in R2 at
+/// `country-assets/{ISO}/{slot}/{uuid}.webp` and are uploaded independently of any row —
+/// an admin browses the library, picks or uploads, and only then is a country created
+/// from the two keys they settled on. The ISO segment inside a key says where the asset
+/// was filed, NOT which country owns it: two countries may legitimately reference one
+/// asset, and an asset filed under `IN` may be chosen for another country.
+///
+/// So the binding between a country and its images is THESE TWO COLUMNS and nothing
+/// else. It is never inferred from a key, a filename or image content, and a client can
+/// never supply a reference that was not first proven to be one of ours and to exist —
+/// see `parseCountryImageKey` and `CountryImageStorage.exists`.
+///
+/// The uuid in a key is what makes an upload non-destructive: a new image is a new
+/// object, so a flag this row points at cannot be overwritten by someone else's upload.
+/// That also makes keys self-versioning — choosing a different image changes the key,
+/// which changes the URL, so no cache-busting is needed for them.
+///
+/// ─── KEYS ARE STORED, URLs ARE DERIVED ────────────────────────────────────
+///
+/// The columns hold R2 object keys. Public URLs are composed at read time from
+/// `config.R2_PUBLIC_BASE_URL`, so moving to a custom domain or a different CDN is a
+/// config change rather than an UPDATE over every row. Storing an absolute URL would
+/// bake today's hostname into permanent data, and would also mean accepting one from a
+/// client — which is exactly the reference this API refuses.
+///
+/// READ BY THE CONSUMER BACKEND (../Orebit-backend) with a read-only raw query against
+/// `admin.countries` — the arrangement `AdminCaptchaProvider` already has, and for the
+/// same reason: two Prisma clients modelling one table is two sources of truth, and
+/// whichever migrates second wins. Renaming a column here is a BREAKING CHANGE for that
+/// reader and nothing in either repository's type system will say so. It needs
+/// `GRANT USAGE ON SCHEMA admin` and `GRANT SELECT ON admin.countries`, and nothing more.
+///
+/// No `version` column: the compare-and-swap on `KycPolicy` and
+/// `SecurityRestrictionPolicy` exists because those are read-modify-write form replaces
+/// that two admins can interleave. A country is inserted complete in one statement, so a
+/// version would be a token with nothing to guard.
+///
+/// No `deletedAt`: nothing removes a country, and a soft-delete column with no delete
+/// path is a second way to say a thing that is never said.
+///
+/// NOTE ON THE MIGRATION: db/migrations/20260919120000_countries/migration.sql describes
+/// the ORIGINAL `countries/{ISO}/{slot}.webp` scheme, because an applied migration's SQL
+/// is checksummed by Prisma and must never be edited. The table it creates is unchanged
+/// and correct — only its prose predates the library. This comment is the current
+/// authority on how the columns are used.
+model Country {
+  /// uuidv7() from src/utils/public.utils.ts, supplied by the application.
+  id String @id @db.Uuid
+
+  /// Display name — human-readable, never an identifier. See the note above.
+  name String @db.VarChar(80)
+
+  /// ISO 3166-1 alpha-2, uppercase, validated against the list in
+  /// src/country/country.constants.ts before it is ever stored.
+  ///
+  /// `Char(2)` matches the five country columns in the consumer's `identity` schema,
+  /// so a value read here can be compared to `users.country_declared` without a cast.
+  /// Unlike `KycPolicy.region` this is never `'*'` — a country row IS a country — so
+  /// the blank-padding that forced VarChar(2) over there is not a concern.
+  isoCode String @unique @map("iso_code") @db.Char(2)
+
+  /// R2 object keys, never URLs. Nullable only because the column predates the library
+  /// flow; every row the create path can produce has BOTH set, because a country is now
+  /// created from two already-chosen assets and a half-rendered flag pair is worse than
+  /// no country at all.
+  roundImageKey  String? @map("round_image_key") @db.VarChar(255)
+  squareImageKey String? @map("square_image_key") @db.VarChar(255)
+
+  /// When this row's images were chosen. Set at creation.
+  ///
+  /// Also the `?v=` the URL resolver appends. That is now belt-and-braces for keys minted
+  /// under `country-assets/`, which carry a uuid and are already unique per image — it
+  /// still matters for the legacy `countries/{ISO}/{slot}.webp` objects, whose key is
+  /// shared across uploads.
+  imagesUpdatedAt DateTime? @map("images_updated_at") @db.Timestamptz
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  /// `@default(now())` and not `@updatedAt` — the image write is raw-free but the
+  /// column is also set by hand on that path, and `@updatedAt` only applies to writes
+  /// Prisma performs, so it would silently lie on any other.
+  updatedAt DateTime @default(now()) @map("updated_at") @db.Timestamptz
+
+  @@map("countries")
+  @@schema("admin")
+}

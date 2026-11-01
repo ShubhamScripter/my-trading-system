@@ -1,0 +1,34 @@
+-- Escalating lockout, and the durable state it needs.
+--
+-- ─── What was wrong with a flat penalty ──────────────────────────────────────
+--
+-- Ten wrong passwords locked a credential for fifteen minutes, and the eleventh
+-- offence cost exactly what the first did. That is a penalty an attacker can budget
+-- for: ninety-six lockout cycles a day against one account, indefinitely, at a fixed
+-- price. Meanwhile the person the lock protects is inconvenienced identically whether
+-- they mistyped their own password once or someone has been grinding their account
+-- for a week.
+--
+-- The ladder makes the two diverge. First lock is still fifteen minutes — a real user
+-- notices nothing different — then an hour, then a day, so the third offence costs a
+-- hundred times the first.
+--
+-- ─── Why these columns and not Redis ─────────────────────────────────────────
+--
+-- `failed_attempts` and `locked_until` are already here rather than in the cache,
+-- because lockout has to keep enforcing with Redis down — which is exactly when a
+-- brute-force attempt is most attractive. The strike count is the same argument one
+-- level up: a ladder whose memory a cache flush resets is a ladder that never climbs,
+-- and an attacker who can cause a flush can serve the shortest wait forever.
+--
+-- ─── Why the timestamp ───────────────────────────────────────────────────────
+--
+-- The ladder's memory decays from the NEWEST strike, not the first. Anchored to the
+-- first, a caller pacing themselves just under the window starts every campaign at
+-- rung one — the same defect the CAPTCHA strike counter had, and fixed the same way.
+--
+-- Both columns are additive with defaults, so existing rows are untouched and read as
+-- "never locked", which is the correct starting state for them.
+ALTER TABLE "identity"."credentials"
+  ADD COLUMN IF NOT EXISTS "lockout_strikes" INTEGER NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS "lockout_strike_at" TIMESTAMPTZ;

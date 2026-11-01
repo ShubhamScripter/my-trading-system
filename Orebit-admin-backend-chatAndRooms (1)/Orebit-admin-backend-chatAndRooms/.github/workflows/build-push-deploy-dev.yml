@@ -1,0 +1,289 @@
+name: Build and Push DEV
+
+# Builds the admin backend (NestJS/Fastify) standalone from this repo alone --
+# no parent `admin-backend/` folder, no sibling `deployment/` folder; see the
+# Dockerfile's own header for why. Pushes a linux/amd64 + linux/arm64 manifest
+# list to GHCR, then optionally rolls it out to the `dev` namespace on the k3s
+# node. Mirrors Orebit-UI's already-working workflow of the same name.
+#
+# Auth: the built-in GITHUB_TOKEN with `packages: write`. No PAT is involved on
+# the push side.
+#
+# Manual only. Nothing about a PR (open, sync, or merge) triggers this
+# workflow -- build, push and deploy all happen on an explicit
+# workflow_dispatch from the dev branch.
+#
+# Migrations are NOT run by this workflow yet. The cross-module migration
+# order (root `admin` schema vs. wallet_core/price_conversion vs. the
+# admin-audits raw SQL files) is not fully confirmed -- see the provisioning
+# notes. Until that's settled, migrations are applied by hand; do not add an
+# automated migration Job here without resolving that first.
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: build-and-push-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  REGISTRY: ghcr.io
+  NODE_VERSION: "22"
+  IMAGE_REPO: ghcr.io/orebit-main/orebit-admin-backend
+
+jobs:
+  verify:
+    name: Typecheck, lint, test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+
+    steps:
+      - name: Check out
+        uses: actions/checkout@v5
+
+      - name: Set up Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      # Three separate Prisma schemas need generating before tsc can resolve
+      # their types -- see the Dockerfile's own comment on this. Confirmed
+      # necessary by building the image locally; without all three, `npm run
+      # build` fails on the wallet-core/price-conversion modules.
+      - name: Generate Prisma clients
+        run: |
+          npx prisma generate --schema=db/schema.prisma
+          npx prisma generate --schema=src/wallet/core/schema.prisma
+          npx prisma generate --schema=src/wallet/price-conversion/schema.prisma
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      # No --env-file: src/config.ts parses process.env at import time and
+      # exits when a required key is absent, but tests/setup.ts assigns every
+      # key at top level before any import of config can run, per this repo's
+      # own ci.yml.
+      - name: Test
+        run: npm test
+
+  build-and-push:
+    name: Build and push
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: write
+
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
+
+    steps:
+      - name: Check out
+        uses: actions/checkout@v5
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Derive tags and labels
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE_REPO }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,prefix=,format=short
+            type=raw,value=latest,enable={{is_default_branch}}
+          labels: |
+            org.opencontainers.image.title=Orebit Admin Backend
+            org.opencontainers.image.description=Admin API for the OREBiT platform (auth, wallet admin, pricing admin)
+
+      - name: Build and push
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          annotations: ${{ steps.meta.outputs.annotations }}
+          # No build-args -- unlike the frontend, nothing here gets baked into
+          # a client bundle. All configuration is runtime env via the k8s
+          # Secret (see k8s/dev/admin-backend.yaml).
+          cache-from: type=gha
+          cache-to: type=gha,mode=min
+          provenance: false
+
+      - name: Summary
+        if: github.event_name != 'pull_request'
+        run: |
+          {
+            echo "### Pushed to GHCR"
+            echo
+            echo "**Digest** (pin deployments to this, not to a moving tag):"
+            echo '```'
+            echo "${{ env.IMAGE_REPO }}@${{ steps.build.outputs.digest }}"
+            echo '```'
+            echo "**Tags:**"
+            echo '```'
+            echo "${{ steps.meta.outputs.tags }}"
+            echo '```'
+            echo "**Platforms:** linux/amd64, linux/arm64"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # ---------------------------------------------------------------------------
+  # Deploy to the dev namespace. Same SSM-only mechanism as Orebit-UI -- the
+  # k3s apiserver has no public endpoint, so this job never connects to the
+  # cluster directly. It asks SSM to run `k3s kubectl` ON the node instead.
+  # ---------------------------------------------------------------------------
+  deploy-dev:
+    name: Deploy to dev
+    needs: build-and-push
+    if: >-
+      github.event_name == 'workflow_dispatch'
+      && github.ref == 'refs/heads/dev'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    environment: dev
+
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Check out
+        uses: actions/checkout@v5
+
+      - name: Assume the deploy role via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ap-south-1
+          role-session-name: gha-deploy-${{ github.run_id }}
+
+      - name: Resolve the k3s node
+        id: node
+        run: |
+          set -euo pipefail
+          ID=$(aws ec2 describe-instances \
+            --filters "Name=tag:Name,Values=nonprod-orebit-k3s-node" \
+                      "Name=instance-state-name,Values=running" \
+            --query 'Reservations[0].Instances[0].InstanceId' --output text)
+          if [ -z "$ID" ] || [ "$ID" = "None" ]; then
+            echo "::error::no running instance tagged nonprod-orebit-k3s-node"
+            exit 1
+          fi
+          echo "instance-id=$ID" >> "$GITHUB_OUTPUT"
+          echo "resolved $ID"
+
+      # Anchored on the literal repository string, not on indentation --
+      # k8s/dev/admin-backend.yaml also has two `image: redis:7-alpine` lines
+      # for the cache/durable Redis, which a generic `^[[:space:]]+image: `
+      # anchor (as Orebit-UI's manifest uses, safe there because it only has
+      # one image: line) would incorrectly overwrite too.
+      - name: Render the manifest against the built digest
+        id: render
+        run: |
+          set -euo pipefail
+          IMAGE="${{ env.IMAGE_REPO }}@${{ needs.build-and-push.outputs.digest }}"
+          sed -E "s#(image: )${{ env.IMAGE_REPO }}:dev#\1${IMAGE}#" \
+            k8s/dev/admin-backend.yaml > /tmp/manifest.yaml
+          echo "deploying: $IMAGE"
+          grep -E '^[[:space:]]+image:' /tmp/manifest.yaml
+          echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
+
+      - name: Apply on the node via SSM
+        id: apply
+        run: |
+          set -euo pipefail
+          INSTANCE="${{ steps.node.outputs.instance-id }}"
+
+          B64=$(base64 -w0 /tmp/manifest.yaml)
+
+          cat > /tmp/remote.sh <<EOF
+          set -eu
+          export PATH=/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
+          echo "$B64" | base64 -d > /tmp/orebit-admin-backend.yaml
+          k3s kubectl apply -f /tmp/orebit-admin-backend.yaml
+          k3s kubectl -n dev rollout status statefulset/orebit-admin-redis-durable --timeout=120s
+          k3s kubectl -n dev rollout status deploy/orebit-admin-redis-cache --timeout=120s
+          k3s kubectl -n dev rollout status deploy/orebit-admin-backend --timeout=180s
+          k3s kubectl -n dev get pods -l app.kubernetes.io/part-of=orebit -o wide
+          rm -f /tmp/orebit-admin-backend.yaml
+          EOF
+
+          CMD_ID=$(aws ssm send-command \
+            --instance-ids "$INSTANCE" \
+            --document-name AWS-RunShellScript \
+            --comment "deploy orebit-admin-backend ${GITHUB_SHA:0:7}" \
+            --timeout-seconds 600 \
+            --parameters "$(jq -Rs '{commands: [.]}' < /tmp/remote.sh)" \
+            --query 'Command.CommandId' --output text)
+          echo "command id: $CMD_ID"
+
+          DEADLINE=$(( $(date +%s) + 600 ))
+          while :; do
+            STATUS=$(aws ssm get-command-invocation --command-id "$CMD_ID" --instance-id "$INSTANCE" \
+              --query 'Status' --output text 2>/dev/null || echo Pending)
+            case "$STATUS" in
+              Success|Failed|Cancelled|TimedOut) break ;;
+            esac
+            if [ "$(date +%s)" -ge "$DEADLINE" ]; then
+              echo "::error::timed out after 600s waiting on SSM command $CMD_ID (last status: $STATUS)"
+              break
+            fi
+            sleep 5
+          done
+          echo "--- stdout ---"
+          aws ssm get-command-invocation --command-id "$CMD_ID" --instance-id "$INSTANCE" \
+            --query 'StandardOutputContent' --output text
+          echo "--- stderr ---"
+          aws ssm get-command-invocation --command-id "$CMD_ID" --instance-id "$INSTANCE" \
+            --query 'StandardErrorContent' --output text
+
+          echo "status=$STATUS" >> "$GITHUB_OUTPUT"
+          [ "$STATUS" = "Success" ] || { echo "::error::deploy failed ($STATUS)"; exit 1; }
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "### Deploy to dev: ${{ steps.apply.outputs.status || 'failed before apply' }}"
+            echo
+            echo '```'
+            echo "${{ steps.render.outputs.image }}"
+            echo '```'
+            echo "Rolled out by digest, not by the \`dev\` tag."
+            echo
+            echo "No public URL -- this API is only reachable from inside the cluster, through the frontend's nginx proxy. Reach it directly with:"
+            echo '```'
+            echo "kubectl -n dev port-forward deploy/orebit-admin-backend 3002:3002"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

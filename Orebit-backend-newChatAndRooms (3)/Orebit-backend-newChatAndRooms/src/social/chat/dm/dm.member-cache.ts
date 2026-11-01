@@ -1,0 +1,61 @@
+// A short-lived, in-process copy of each conversation's member list (Modules 8-9).
+// Why: every message, typing signal and read receipt needs the members of its conversation. Before this cache each of
+// them ran a members query (up to 100,000 rows) - 500 queries for one message in a 500-member group when everyone read
+// it (handoff , ). Now one query serves every event of the conversation for a few seconds.
+// Freshness: every write to dm_members goes through DmDbOperation / DmGroupsDbOperation, which call `invalidate`, so
+// inside one server the cache is exact. Across servers it is at most `TTL_MS` behind ( allows ~5 seconds). Lists
+// above `MAX_ROWS` are not kept (a huge group is read through aggregated paths, not per-event member lists).
+// The timer is the steady clock (performance.now): it only decides cache freshness and never stores or shows a time.
+import type { MemberRow } from './dm.dboperation';
+
+const TTL_MS = 5_000;
+const MAX_ROWS = 20_000;
+const MAX_ENTRIES = 5_000;
+
+interface Entry {
+  readonly at: number;
+  readonly rows: readonly MemberRow[];
+}
+
+export class DmMemberCache {
+  private readonly entries = new Map<string, Entry>();
+
+  constructor(private readonly now: () => number = () => performance.now()) {}
+
+  // Every member of the conversation (all states), or undefined when not cached or too old.
+  get(conversationId: string): readonly MemberRow[] | undefined {
+    const entry = this.entries.get(conversationId);
+    if (!entry) return undefined;
+    if (this.now() - entry.at > TTL_MS) {
+      this.entries.delete(conversationId);
+      return undefined;
+    }
+    return entry.rows;
+  }
+
+  set(conversationId: string, rows: readonly MemberRow[]): void {
+    if (rows.length > MAX_ROWS) return;
+    if (this.entries.size >= MAX_ENTRIES) {
+      // Oldest first: a Map keeps insertion order.
+      const oldest = this.entries.keys().next().value;
+      if (oldest !== undefined) this.entries.delete(oldest);
+    }
+    this.entries.delete(conversationId);
+    this.entries.set(conversationId, { at: this.now(), rows });
+  }
+
+  invalidate(conversationId: string): void {
+    this.entries.delete(conversationId);
+  }
+
+  clear(): void {
+    this.entries.clear();
+  }
+
+  get size(): number {
+    return this.entries.size;
+  }
+}
+
+// The one cache of the process.
+export const dmMemberCache = new DmMemberCache();

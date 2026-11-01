@@ -1,0 +1,923 @@
+{
+  "info": {
+    "_postman_id": "orebit-admin-control-panel-api",
+    "name": "Orebit Admin Control Panel API",
+    "description": "Complete Postman collection for Orebit Admin Backend (Auth, Chat & Moderation, Admins, 2FA, Captcha, Policies, Countries).",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "adminBaseUrl",
+      "value": "http://localhost:3002",
+      "type": "string"
+    },
+    {
+      "key": "roomId",
+      "value": "00000000-0000-0000-0000-000000000001",
+      "type": "string"
+    },
+    {
+      "key": "reportId",
+      "value": "00000000-0000-0000-0000-000000000001",
+      "type": "string"
+    },
+    {
+      "key": "banId",
+      "value": "00000000-0000-0000-0000-000000000001",
+      "type": "string"
+    },
+    {
+      "key": "cosmeticId",
+      "value": "00000000-0000-0000-0000-000000000001",
+      "type": "string"
+    },
+    {
+      "key": "messageId",
+      "value": "00000000-0000-0000-0000-000000000001",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "00. Admin Authentication",
+      "item": [
+        {
+          "name": "Admin Login (Start Step)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"step\": \"start\",\n  \"identifier\": \"admin@orebit.com\"\n}"
+            },
+            "url": {
+              "raw": "{{adminBaseUrl}}/auth/login",
+              "host": [
+                "{{adminBaseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Current Admin Profile (/auth/me)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{adminBaseUrl}}/auth/me",
+              "host": [
+                "{{adminBaseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "me"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Admin Session Status (/auth/session)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{adminBaseUrl}}/auth/session",
+              "host": [
+                "{{adminBaseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "session"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "01. Stats & Overview",
+      "item": [
+        {
+          "name": "Get Chat Platform Stats",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{adminBaseUrl}}/social/chat/stats",
+              "host": [
+                "{{adminBaseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "stats"
+              ]
+            },
+            "description": "Returns platform aggregate metrics: active rooms, live chatters, total messages sent, pending reports, active bans, and rainpool volume."
+          }
+        }
+      ]
+    },
+    {
+      "name": "02. Room Management",
+      "item": [
+        {
+          "name": "List All Rooms",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{adminBaseUrl}}/social/chat/rooms",
+              "host": [
+                "{{adminBaseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "rooms"
+              ]
+            },
+            "description": "Retrieves all chat rooms with active participant count, message metrics, content controls, and settings."
+          }
+        },
+        {
+          "name": "Create Room",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"High Rollers VIP\",\n  \"slug\": \"high-rollers-vip\",\n  \"type\": \"VIP\",\n  \"description\": \"High stakes lounge for VIP tier 1+ users\",\n  \"icon\": \"crown\",\n  \"topic\": \"Big wagers and high multiplier hits\",\n  \"language\": \"English\",\n  \"continent\": \"Global\",\n  \"linksPolicy\": \"ALL_LINKS\",\n  \"rules\": [\n    \"Be respectful to all high-roller players\",\n    \"No spamming rain requests\",\n    \"Keep advertising in the /ad command only\"\n  ],\n  \"contentControls\": {\n    \"slowModeSeconds\": 5,\n    \"cooldownDurationSeconds\": 30,\n    \"minWagerRequired\": 50,\n    \"allowEmojis\": true,\n    \"allowGifs\": true,\n    \"allowRains\": true,\n    \"allowTipping\": true\n  }\n}"
+            },
+            "url": {
+              "raw": "{{adminBaseUrl}}/social/chat/rooms",
+              "host": [
+                "{{adminBaseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "rooms"
+              ]
+            },
+            "description": "Creates a chat room under one of the 7 official room categories: GLOBAL, REGIONAL, LANGUAGE, VIP, PREMIUM, CASINO, SPORTS."
+          }
+        },
+        {
+          "name": "Update Room",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"roomId\": \"{{roomId}}\",\n  \"name\": \"Global English VIP\",\n  \"topic\": \"Updated chat topic banner\",\n  \"status\": \"ACTIVE\",\n  \"linksPolicy\": \"OREBIT_ONLY\",\n  \"contentControls\": {\n    \"slowModeSeconds\": 10,\n    \"minWagerRequired\": 20\n  }\n}"
+            },
+            "url": {
+              "raw": "{{adminBaseUrl}}/social/chat/rooms/update",
+              "host": [
+                "{{adminBaseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "rooms",
+                "update"
+              ]
+            },
+            "description": "Updates room properties, display topic, access restrictions, or policy configurations."
+          }
+        },
+        {
+          "name": "Update Room Controls",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"roomId\": \"{{roomId}}\",\n  \"controls\": {\n    \"slowModeSeconds\": 15,\n    \"allowGifs\": false,\n    \"allowRains\": true\n  }\n}"
+            },
+            "url": {
+              "raw": "{{adminBaseUrl}}/social/chat/rooms/controls",
+              "host": [
+                "{{adminBaseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "rooms",
+                "controls"
+              ]
+            },
+            "description": "Quick granular update for room content controls."
+          }
+        },
+        {
+          "name": "Delete Room",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"roomId\": \"{{roomId}}\"\n}"
+            },
+            "url": {
+              "raw": "{{adminBaseUrl}}/social/chat/rooms/delete",
+              "host": [
+                "{{adminBaseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "rooms",
+                "delete"
+              ]
+            },
+            "description": "Deletes or disables a room."
+          }
+        }
+      ]
+    },
+    {
+      "name": "03. Rules & Guidelines",
+      "item": [
+        {
+          "name": "Get Room Rules",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{adminBaseUrl}}/social/chat/rules?roomId={{roomId}}",
+              "host": [
+                "{{adminBaseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "rules"
+              ],
+              "query": [
+                {
+                  "key": "roomId",
+                  "value": "{{roomId}}"
+                }
+              ]
+            },
+            "description": "Retrieves the guidelines and rules configured for a room."
+          }
+        },
+        {
+          "name": "Update Room Rules",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"roomId\": \"{{roomId}}\",\n  \"rules\": [\n    \"No offensive language or harassment\",\n    \"No unapproved affiliate or referral links\",\n    \"English only in this channel\",\n    \"No beggar behavior or spamming rain\"\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{adminBaseUrl}}/social/chat/rules",
+              "host": [
+                "{{adminBaseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "rules"
+              ]
+            },
+            "description": "Updates guidelines for a chat room."
+          }
+        }
+      ]
+    },
+    {
+      "name": "04. Reports & Message Moderation",
+      "item": [
+        {
+          "name": "List Reported Messages",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{adminBaseUrl}}/social/chat/reports?status=PENDING",
+              "host": [
+                "{{adminBaseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "reports"
+              ],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "PENDING"
+                }
+              ]
+            },
+            "description": "Returns flagged and reported messages waiting for moderator action."
+          }
+        },
+        {
+          "name": "Action Report (Dismiss, Warn, Ban, Delete)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reportId\": \"{{reportId}}\",\n  \"action\": \"DELETE_MESSAGE\",\n  \"reason\": \"Scam external link\"\n}"
+            },
+            "url": {
+              "raw": "{{adminBaseUrl}}/social/chat/reports/action",
+              "host": [
+                "{{adminBaseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "reports",
+                "action"
+              ]
+            },
+            "description": "Resolves a pending report with DISMISS, WARN, BAN, or DELETE_MESSAGE."
+          }
+        },
+        {
+          "name": "Direct Retract Message",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"messageId\": \"{{messageId}}\"\n}"
+            },
+            "url": {
+              "raw": "{{adminBaseUrl}}/social/chat/retract",
+              "host": [
+                "{{adminBaseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "retract"
+              ]
+            },
+            "description": "Administratively redacts a message from the room feed."
+          }
+        }
+      ]
+    },
+    {
+      "name": "05. User Bans & Sanctions",
+      "item": [
+        {
+          "name": "List Active Bans",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{adminBaseUrl}}/social/chat/bans",
+              "host": [
+                "{{adminBaseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "bans"
+              ]
+            },
+            "description": "Lists all active chat bans, durations, and issuing moderators."
+          }
+        },
+        {
+          "name": "Issue User Ban",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userId\": \"user-uuid-or-username\",\n  \"username\": \"cryptowolf\",\n  \"reason\": \"Severe abuse and repeat spamming\",\n  \"durationHours\": 24,\n  \"roomId\": null\n}"
+            },
+            "url": {
+              "raw": "{{adminBaseUrl}}/social/chat/bans",
+              "host": [
+                "{{adminBaseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "bans"
+              ]
+            },
+            "description": "Bans a user globally (roomId: null) or scoped to a specific room."
+          }
+        },
+        {
+          "name": "Revoke Ban (Unban User)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"banId\": \"{{banId}}\"\n}"
+            },
+            "url": {
+              "raw": "{{adminBaseUrl}}/social/chat/bans/unban",
+              "host": [
+                "{{adminBaseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "bans",
+                "unban"
+              ]
+            },
+            "description": "Immediately unbans the user."
+          }
+        }
+      ]
+    },
+    {
+      "name": "06. Cosmetics & Badges",
+      "item": [
+        {
+          "name": "List Chat Cosmetics",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{adminBaseUrl}}/social/chat/cosmetics",
+              "host": [
+                "{{adminBaseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "cosmetics"
+              ]
+            },
+            "description": "Retrieves all custom username gradients, avatar frames, and badges."
+          }
+        },
+        {
+          "name": "Create Chat Cosmetic",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Diamond VIP Gradient\",\n  \"description\": \"Exclusive sparkling diamond animated gradient\",\n  \"gradient\": \"linear-gradient(135deg, #e0e7ff 0%, #a5b4fc 50%, #6366f1 100%)\",\n  \"borderColor\": \"#6366f1\",\n  \"badgeIcon\": \"diamond\",\n  \"cost\": 100,\n  \"isPremium\": true,\n  \"isActive\": true\n}"
+            },
+            "url": {
+              "raw": "{{adminBaseUrl}}/social/chat/cosmetics",
+              "host": [
+                "{{adminBaseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "cosmetics"
+              ]
+            },
+            "description": "Adds a new chat cosmetic styling item."
+          }
+        },
+        {
+          "name": "Delete Cosmetic",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"id\": \"{{cosmeticId}}\"\n}"
+            },
+            "url": {
+              "raw": "{{adminBaseUrl}}/social/chat/cosmetics/delete",
+              "host": [
+                "{{adminBaseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "cosmetics",
+                "delete"
+              ]
+            },
+            "description": "Deletes or disables a cosmetic item."
+          }
+        }
+      ]
+    },
+    {
+      "name": "07. Broadcast Announcements",
+      "item": [
+        {
+          "name": "Send Announcement Broadcast",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"roomId\": null,\n  \"type\": \"ADMIN_ALERT\",\n  \"title\": \"Platform Maintenance Tonight\",\n  \"content\": \"Platform server updates will take place at 02:00 UTC for 15 minutes.\",\n  \"priority\": \"HIGH\"\n}"
+            },
+            "url": {
+              "raw": "{{adminBaseUrl}}/social/chat/broadcast",
+              "host": [
+                "{{adminBaseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "broadcast"
+              ]
+            },
+            "description": "Broadcasts a high-visibility announcement to all chat rooms or a specific target room."
+          }
+        }
+      ]
+    },
+    {
+      "name": "08. History & Live Audit",
+      "item": [
+        {
+          "name": "Get Room Chat History",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{adminBaseUrl}}/social/chat/history?roomId={{roomId}}&limit=50&offset=0",
+              "host": [
+                "{{adminBaseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "history"
+              ],
+              "query": [
+                {
+                  "key": "roomId",
+                  "value": "{{roomId}}"
+                },
+                {
+                  "key": "limit",
+                  "value": "50"
+                },
+                {
+                  "key": "offset",
+                  "value": "0"
+                }
+              ]
+            },
+            "description": "Paginates through chat messages in a room for auditing, inspection, and moderation."
+          }
+        }
+      ]
+    },
+    {
+      "name": "09. Moderation Studio Controls (Module 4)",
+      "item": [
+        {
+          "name": "Get Moderation Settings",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{adminBaseUrl}}/social/chat/moderation-settings?roomId={{roomId}}",
+              "host": [
+                "{{adminBaseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "moderation-settings"
+              ],
+              "query": [
+                {
+                  "key": "roomId",
+                  "value": "{{roomId}}"
+                }
+              ]
+            },
+            "description": "Returns full auto-moderation settings: spam protection, auto-ban ladder, blocklist keywords, command permissions, 35 staff roles, user/group restrictions, and bot persona config."
+          }
+        },
+        {
+          "name": "Save Moderation Settings",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"roomId\": \"{{roomId}}\",\n  \"spamProtection\": {\n    \"enabled\": true,\n    \"repeatCount\": 3,\n    \"windowSeconds\": 10\n  },\n  \"autoBanSequence\": [\n    {\n      \"tier\": 1,\n      \"action\": \"WARNING\",\n      \"resetWindowHours\": 24\n    },\n    {\n      \"tier\": 2,\n      \"action\": \"BAN\",\n      \"durationSeconds\": 3600,\n      \"resetWindowHours\": 48\n    },\n    {\n      \"tier\": 3,\n      \"action\": \"BAN\",\n      \"durationSeconds\": 86400,\n      \"resetWindowHours\": 168\n    }\n  ],\n  \"linkPolicy\": \"OREBIT_ONLY\",\n  \"bannedWords\": [\n    \"scam\",\n    \"free money\",\n    \"t.me/\"\n  ],\n  \"globalDisabledCommands\": [\n    \"/ad\"\n  ],\n  \"allCommandsDisabled\": false,\n  \"botConfig\": {\n    \"botName\": \"OREBiT Assistant\",\n    \"botUserId\": \"system-bot-01\",\n    \"botAvatar\": \"BOT\",\n    \"isActive\": true,\n    \"welcomeTemplate\": \"Welcome to {room}, @{user}! Please abide by our chat community guidelines.\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{adminBaseUrl}}/social/chat/moderation-settings",
+              "host": [
+                "{{adminBaseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "moderation-settings"
+              ]
+            },
+            "description": "Saves room auto-moderation configurations."
+          }
+        }
+      ]
+    },
+    {
+      "name": "09. Platform Administration",
+      "item": [
+        {
+          "name": "Get Admin Login Reviews",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{adminBaseUrl}}/admins/login-reviews",
+              "host": [
+                "{{adminBaseUrl}}"
+              ],
+              "path": [
+                "admins",
+                "login-reviews"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get 2FA Status",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{adminBaseUrl}}/2fa",
+              "host": [
+                "{{adminBaseUrl}}"
+              ],
+              "path": [
+                "2fa"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Security Policies",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{adminBaseUrl}}/security-policies",
+              "host": [
+                "{{adminBaseUrl}}"
+              ],
+              "path": [
+                "security-policies"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Captcha Config",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{adminBaseUrl}}/captcha",
+              "host": [
+                "{{adminBaseUrl}}"
+              ],
+              "path": [
+                "captcha"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Countries List",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{adminBaseUrl}}/countries",
+              "host": [
+                "{{adminBaseUrl}}"
+              ],
+              "path": [
+                "countries"
+              ]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

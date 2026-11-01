@@ -1,0 +1,175 @@
+-- Apply only during reviewed provisioning, after the Wallet contract migration.
+-- Existing runtime roles only; this template creates no roles, logins or credentials.
+-- The audit membership template remains the authority for the four canonical audit runtimes.
+\set ON_ERROR_STOP on
+\if :{?price_runtime_role}
+\else
+  \echo 'price_runtime_role must name the existing Price Conversion runtime'
+  DO $$ BEGIN RAISE EXCEPTION 'Wallet runtime capability validation failed'; END $$;
+\endif
+\if :{?ledger_posting_role}
+\else
+  \echo 'ledger_posting_role must name the existing Ledger-owned NOLOGIN posting capability'
+  DO $$ BEGIN RAISE EXCEPTION 'Wallet runtime capability validation failed'; END $$;
+\endif
+
+BEGIN;
+SELECT (rolcanlogin AND NOT rolsuper AND NOT rolcreatedb AND NOT rolcreaterole AND NOT rolbypassrls
+  AND rolinherit AND rolname NOT IN ('orebit_admin_runtime','orebit_wallet_core_user_runtime',current_user)) AS price_role_isolated
+FROM pg_roles WHERE oid=:'price_runtime_role'::regrole \gset
+\if :price_role_isolated
+\else
+  \echo 'Price runtime must be a separate unprivileged role'
+  DO $$ BEGIN RAISE EXCEPTION 'Wallet runtime capability validation failed'; END $$;
+\endif
+SELECT (NOT rolcanlogin AND NOT rolsuper AND NOT rolcreatedb AND NOT rolcreaterole
+  AND NOT rolbypassrls AND rolname<>current_user
+  AND rolname NOT IN ('orebit_wallet_core_admin_writer','orebit_wallet_core_user_writer',
+    'orebit_wallet_core_lifecycle_writer','orebit_price_conversion_writer',
+    'orebit_admin_audit_owner','orebit_admin_audit_writer','orebit_admin_audit_reader')
+  AND oid<>:'price_runtime_role'::regrole) AS ledger_role_isolated
+FROM pg_roles WHERE oid=:'ledger_posting_role'::regrole \gset
+\if :ledger_role_isolated
+\else
+  \echo 'Ledger posting capability must be an unprivileged NOLOGIN role'
+  DO $$ BEGIN RAISE EXCEPTION 'Wallet runtime capability validation failed'; END $$;
+\endif
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM unnest(ARRAY['orebit_admin_runtime','orebit_wallet_core_user_runtime']) name
+    LEFT JOIN pg_roles role ON role.rolname=name WHERE role.oid IS NULL OR role.rolsuper
+      OR role.rolcreatedb OR role.rolcreaterole OR role.rolbypassrls OR NOT role.rolinherit) THEN
+    RAISE EXCEPTION 'Wallet runtime role is not isolated';
+  END IF;
+END $$;
+GRANT orebit_wallet_core_admin_writer TO orebit_admin_runtime;
+GRANT orebit_wallet_core_user_writer,orebit_wallet_core_lifecycle_writer TO orebit_wallet_core_user_runtime;
+GRANT :"ledger_posting_role" TO orebit_wallet_core_user_runtime;
+GRANT orebit_price_conversion_writer TO :"price_runtime_role";
+
+-- Inspect the resulting composition before COMMIT. INHERIT-only and SET-only paths both
+-- matter: checking role flags or only the immediate Ledger grant misses indirect owners.
+WITH RECURSIVE roots(kind, role_oid) AS (
+  VALUES ('worker', 'orebit_wallet_core_user_runtime'::regrole::oid),
+    ('admin', 'orebit_admin_runtime'::regrole::oid),
+    ('ledger', :'ledger_posting_role'::regrole::oid), ('price', :'price_runtime_role'::regrole::oid)
+), reachable(kind, role_oid) AS (
+  SELECT kind, role_oid FROM roots
+  UNION
+  SELECT reached.kind, membership.roleid FROM reachable reached
+    JOIN pg_auth_members membership ON membership.member=reached.role_oid
+    WHERE membership.inherit_option OR membership.set_option OR membership.admin_option
+), relations AS (
+  SELECT relation.oid, relation.relname, relation.relowner, namespace.nspname
+  FROM pg_class relation JOIN pg_namespace namespace ON namespace.oid=relation.relnamespace
+  WHERE namespace.nspname IN ('ledger','wallet_core','price_conversion','admin')
+    AND relation.relkind IN ('r','p','v','m','f')
+), violations AS (
+  SELECT 1 FROM reachable reached JOIN pg_roles role ON role.oid=reached.role_oid
+  WHERE role.rolsuper OR role.rolcreatedb OR role.rolcreaterole OR role.rolbypassrls
+    OR role.rolname IN ('orebit_admin_audit_owner','orebit_admin_audit_reader')
+    OR (reached.kind<>'admin' AND role.rolname='orebit_wallet_core_admin_writer')
+    OR (reached.kind<>'price' AND role.rolname='orebit_price_conversion_writer')
+    OR (reached.kind<>'worker' AND role.rolname IN
+      ('orebit_wallet_core_user_writer','orebit_wallet_core_lifecycle_writer'))
+    OR (reached.kind NOT IN ('worker','admin') AND role.rolname='orebit_admin_audit_writer')
+  UNION ALL
+  SELECT 1 FROM reachable reached JOIN pg_namespace namespace
+    ON namespace.nspname IN ('ledger','wallet_core','price_conversion','admin')
+  WHERE namespace.nspowner=reached.role_oid OR has_schema_privilege(reached.role_oid,namespace.oid,'CREATE')
+  UNION ALL
+  SELECT 1 FROM reachable reached JOIN relations relation ON true
+  WHERE relation.relowner=reached.role_oid
+    OR has_table_privilege(reached.role_oid,relation.oid,'TRUNCATE,TRIGGER,REFERENCES')
+    OR (has_table_privilege(reached.role_oid,relation.oid,'DELETE') AND NOT
+      (reached.kind='admin' AND ((relation.nspname='wallet_core' AND relation.relname IN
+        ('provider_catalogue_chains','provider_catalogue_currencies'))
+        OR (relation.nspname='price_conversion' AND relation.relname='currency_provider_refs'))))
+    OR CASE WHEN current_setting('server_version_num')::integer>=170000
+      THEN has_table_privilege(reached.role_oid,relation.oid,'MAINTAIN') ELSE false END
+    OR (relation.nspname='admin' AND has_any_column_privilege(reached.role_oid,relation.oid,'SELECT,INSERT,UPDATE,REFERENCES'))
+    OR (relation.nspname='wallet_core' AND reached.kind NOT IN ('worker','admin')
+      AND has_any_column_privilege(reached.role_oid,relation.oid,'SELECT,INSERT,UPDATE'))
+    OR (relation.nspname='ledger' AND has_any_column_privilege(reached.role_oid,relation.oid,'SELECT')
+      AND (reached.kind IN ('price','admin') OR relation.relname NOT IN
+        ('ledger_accounts','ledger_journals','ledger_postings','ledger_balances','ledger_journal_seals')))
+  UNION ALL
+  SELECT 1 FROM reachable reached CROSS JOIN relations relation
+    JOIN pg_attribute attribute ON attribute.attrelid=relation.oid AND attribute.attnum>0 AND NOT attribute.attisdropped
+    CROSS JOIN (VALUES ('INSERT'),('UPDATE')) AS operation(privilege)
+  WHERE has_column_privilege(reached.role_oid,relation.oid,attribute.attnum,operation.privilege)
+    AND NOT CASE relation.nspname
+      WHEN 'ledger' THEN reached.kind IN ('worker','ledger') AND (
+        (operation.privilege='INSERT' AND relation.relname IN ('ledger_accounts','ledger_journals','ledger_postings'))
+        OR (operation.privilege='UPDATE' AND relation.relname='ledger_accounts' AND attribute.attname='status'))
+      WHEN 'price_conversion' THEN (reached.kind='price' AND relation.relname<>'currency_provider_refs'
+        AND (relation.relname<>'currencies' OR (operation.privilege='UPDATE' AND attribute.attname='auto_disabled')))
+        OR (reached.kind='admin' AND (relation.relname='currency_provider_refs'
+          OR (relation.relname='currencies' AND (attribute.attname IN
+            ('symbol','name','decimals','kind','pricing_status','updated_at')
+            OR (operation.privilege='INSERT' AND attribute.attname IN ('id','created_at'))))))
+      WHEN 'wallet_core' THEN (reached.kind='worker' AND (
+        relation.relname IN ('user_preferences','delisting_executions','cronjob_runs','wallet_alerts','wallet_notification_outbox')
+        OR (operation.privilege='INSERT' AND relation.relname IN ('state_events','wallet_alert_events',
+          'wallet_reconciliation_runs','wallet_reconciliation_items','wallet_reconciliation_components','wallet_reconciliation_attempts'))
+        OR (operation.privilege='UPDATE' AND relation.relname='wallet_reconciliation_runs'
+          AND attribute.attname IN ('status','currency_count','warning_count','safe_error_code','completed_at'))
+        OR (operation.privilege='UPDATE' AND relation.relname='currency_settings'
+          AND attribute.attname IN ('price_readiness','price_readiness_changed_at','updated_at'))))
+        OR (reached.kind='admin' AND (relation.relname IN ('chains','currencies','currency_settings',
+          'wallet_settings','configuration_changes','legacy_currency_chain_codes','provider_catalogue_chains',
+          'provider_catalogue_currencies','admin_preferences','cronjob_runs','wallet_alerts','wallet_notification_outbox',
+          'wallet_logo_assets','wallet_logo_asset_references')
+          OR (operation.privilege='INSERT' AND relation.relname IN ('custody_addresses','state_events','wallet_alert_events'))
+          OR (operation.privilege='UPDATE' AND relation.relname='custody_addresses'
+            AND attribute.attname IN ('retired_at','retired_revision'))))
+      ELSE false END
+  UNION ALL
+  SELECT 1 FROM reachable reached JOIN pg_proc function ON true
+    JOIN pg_namespace namespace ON namespace.oid=function.pronamespace
+  WHERE namespace.nspname IN ('ledger','wallet_core','price_conversion','admin')
+    AND (function.proowner=reached.role_oid OR (function.prosecdef
+      AND function.prorettype<>'pg_catalog.trigger'::regtype
+      AND has_function_privilege(reached.role_oid,function.oid,'EXECUTE')
+      AND NOT (
+        (reached.kind IN ('worker','ledger') AND function.oid='price_conversion.resolve_money_batch_for_ledger(uuid[])'::regprocedure)
+        OR (reached.kind='worker' AND function.oid='wallet_core.disable_delisted_pricing(uuid)'::regprocedure)
+        OR (reached.kind IN ('worker','admin') AND function.oid=
+          'admin.append_admin_audit_event_v1(uuid,text,text,text,text,uuid,uuid,uuid,uuid,inet,text,text,text,text,jsonb,jsonb,jsonb)'::regprocedure)
+        -- Pricing uses the same checked append helper, with its canonical owner and narrow ACL.
+        OR (reached.kind='price' AND function.oid=
+          'admin.append_admin_audit_event_v1(uuid,text,text,text,text,uuid,uuid,uuid,uuid,inet,text,text,text,text,jsonb,jsonb,jsonb)'::regprocedure
+          AND function.proowner='orebit_admin_audit_owner'::regrole
+          AND NOT EXISTS (
+            SELECT 1 FROM aclexplode(COALESCE(function.proacl,acldefault('f',function.proowner))) permission
+            WHERE permission.privilege_type='EXECUTE' AND (
+              permission.grantee NOT IN ('orebit_admin_audit_owner'::regrole,
+                'orebit_admin_audit_writer'::regrole,'orebit_price_conversion_writer'::regrole)
+              OR (permission.grantee<>function.proowner AND permission.is_grantable))))
+        OR (reached.kind='price' AND function.oid='price_conversion.current_price_config_revision()'::regprocedure))))
+  UNION ALL
+  SELECT 1 FROM roots root WHERE root.kind IN ('worker','ledger') AND (
+    NOT has_schema_privilege(root.role_oid,'ledger','USAGE')
+    OR NOT has_function_privilege(root.role_oid,'price_conversion.resolve_money_batch_for_ledger(uuid[])','EXECUTE')
+    OR NOT has_column_privilege(root.role_oid,'ledger.ledger_accounts','status','UPDATE')
+    OR EXISTS (SELECT 1 FROM unnest(ARRAY['ledger_accounts','ledger_journals','ledger_postings',
+      'ledger_balances','ledger_journal_seals']) relation_name
+      WHERE NOT has_table_privilege(root.role_oid,('ledger.'||relation_name)::regclass,'SELECT'))
+    OR EXISTS (SELECT 1 FROM unnest(ARRAY['ledger_accounts','ledger_journals','ledger_postings']) relation_name
+      WHERE NOT has_table_privilege(root.role_oid,('ledger.'||relation_name)::regclass,'INSERT')))
+)
+SELECT NOT EXISTS (SELECT 1 FROM violations) AS worker_capabilities_isolated \gset
+\if :worker_capabilities_isolated
+\else
+  \echo 'Wallet worker capability composition has excess or missing privileges'
+  DO $$ BEGIN RAISE EXCEPTION 'Wallet runtime capability validation failed'; END $$;
+\endif
+COMMIT;
+
+-- Ledger must provision a separate NOLOGIN posting capability with SELECT on accounts/journals/
+-- postings/balances/seals, INSERT on accounts/journals/postings, UPDATE(status) on accounts,
+-- ledger USAGE and Price resolver EXECUTE. The full Ledger runtime template also grants treasury
+-- exchange capabilities; those are deliberately not part of this worker capability. This canonical Wallet
+-- runtime is the operator's worker login too: one transaction inherits Ledger posting, Wallet
+-- runtime/readiness/saved-Price-read capabilities, and audit append via the canonical audit
+-- membership template. Do not grant Price writer, Ledger migration owner, audit owner or reader.

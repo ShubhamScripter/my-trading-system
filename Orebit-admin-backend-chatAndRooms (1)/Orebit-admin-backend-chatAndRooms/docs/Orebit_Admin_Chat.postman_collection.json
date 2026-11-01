@@ -1,0 +1,3639 @@
+{
+  "info": {
+    "_postman_id": "orebit-admin-chat-api",
+    "name": "Orebit Admin — Chat",
+    "description": "Admin chat routes (default http://localhost:3002). Sign in through the admin ceremony (POST /auth/login steps, then POST /2fa; the development code is 123456): the response sets the orebit_admin_session cookie, and the CSRF token goes in csrfToken. Every POST sends x-csrf-token. Set roomId and id in the collection variables. Role assignment, chat-wide settings and a broadcast to every room need a SUPER ADMIN login.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "adminBaseUrl",
+      "value": "http://localhost:3002"
+    },
+    {
+      "key": "csrfToken",
+      "value": ""
+    },
+    {
+      "key": "roomId",
+      "value": ""
+    },
+    {
+      "key": "id",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "1. Overview and broadcast",
+      "item": [
+        {
+          "name": "GET /social/chat/stats — Platform chat numbers",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{adminBaseUrl}}/social/chat/stats",
+              "host": [
+                "{{adminBaseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "stats"
+              ]
+            },
+            "description": "Platform chat numbers"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /social/chat/broadcast — Broadcast to a room (no roomId = every room, super admin)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-csrf-token",
+                "value": "{{csrfToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{adminBaseUrl}}/social/chat/broadcast",
+              "host": [
+                "{{adminBaseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "broadcast"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"roomId\": \"{{id}}\",\n  \"type\": \"ADMIN_ALERT\",\n  \"title\": \"Maintenance\",\n  \"content\": \"Chat restarts at 10:00\",\n  \"priority\": \"NORMAL\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Broadcast to a room (no roomId = every room, super admin)"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', function () { pm.response.to.have.status(201); });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "2. Rooms, rules and regions",
+      "item": [
+        {
+          "name": "GET /social/chat/rooms — List rooms",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{adminBaseUrl}}/social/chat/rooms",
+              "host": [
+                "{{adminBaseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "rooms"
+              ]
+            },
+            "description": "List rooms"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /social/chat/rooms — Create a room",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-csrf-token",
+                "value": "{{csrfToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{adminBaseUrl}}/social/chat/rooms",
+              "host": [
+                "{{adminBaseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "rooms"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"High Rollers\",\n  \"type\": \"GLOBAL\",\n  \"status\": \"ACTIVE\",\n  \"rules\": [\n    \"Be kind\"\n  ],\n  \"bannedWords\": []\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Create a room"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', function () { pm.response.to.have.status(201); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /social/chat/rooms/update — Update a room (only the fields given)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-csrf-token",
+                "value": "{{csrfToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{adminBaseUrl}}/social/chat/rooms/update",
+              "host": [
+                "{{adminBaseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "rooms",
+                "update"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"roomId\": \"{{id}}\",\n  \"name\": \"High Rollers 2\",\n  \"status\": \"MAINTENANCE\",\n  \"statusNote\": \"Back soon\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Update a room (only the fields given)"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', function () { pm.response.to.have.status(201); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /social/chat/rooms/access — Change a room's access rule (super admin)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-csrf-token",
+                "value": "{{csrfToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{adminBaseUrl}}/social/chat/rooms/access",
+              "host": [
+                "{{adminBaseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "rooms",
+                "access"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"roomId\": \"{{id}}\",\n  \"access\": {\n    \"minLevel\": 5\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Super admin only. Who may enter the room; the normal room update refuses access fields."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', function () { pm.response.to.have.status(201); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /social/chat/rooms/delete — Soft-delete a room",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-csrf-token",
+                "value": "{{csrfToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{adminBaseUrl}}/social/chat/rooms/delete",
+              "host": [
+                "{{adminBaseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "rooms",
+                "delete"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"roomId\": \"{{id}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Soft-delete a room"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', function () { pm.response.to.have.status(201); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /social/chat/rules — A room's rules",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{adminBaseUrl}}/social/chat/rules?roomId={{roomId}}",
+              "host": [
+                "{{adminBaseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "rules"
+              ],
+              "query": [
+                {
+                  "key": "roomId",
+                  "value": "{{roomId}}",
+                  "disabled": false
+                }
+              ]
+            },
+            "description": "A room's rules"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /social/chat/rules — Replace a room's rules",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-csrf-token",
+                "value": "{{csrfToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{adminBaseUrl}}/social/chat/rules",
+              "host": [
+                "{{adminBaseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "rules"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"roomId\": \"{{id}}\",\n  \"rules\": [\n    \"Be kind\",\n    \"No spam\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Replace a room's rules"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', function () { pm.response.to.have.status(201); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /social/chat/history — Room history (newest first)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{adminBaseUrl}}/social/chat/history?roomId={{roomId}}&limit=50",
+              "host": [
+                "{{adminBaseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "history"
+              ],
+              "query": [
+                {
+                  "key": "roomId",
+                  "value": "{{roomId}}",
+                  "disabled": false
+                },
+                {
+                  "key": "before",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "limit",
+                  "value": "50",
+                  "disabled": false
+                }
+              ]
+            },
+            "description": "Room history (newest first)"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /social/chat/regions — List regions",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{adminBaseUrl}}/social/chat/regions",
+              "host": [
+                "{{adminBaseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "regions"
+              ]
+            },
+            "description": "List regions"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /social/chat/regions — Create a region",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-csrf-token",
+                "value": "{{csrfToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{adminBaseUrl}}/social/chat/regions",
+              "host": [
+                "{{adminBaseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "regions"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Nordics\",\n  \"countries\": [\n    \"SE\",\n    \"NO\",\n    \"DK\",\n    \"FI\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Create a region"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', function () { pm.response.to.have.status(201); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /social/chat/regions/update — Update a region",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-csrf-token",
+                "value": "{{csrfToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{adminBaseUrl}}/social/chat/regions/update",
+              "host": [
+                "{{adminBaseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "regions",
+                "update"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"regionId\": \"{{id}}\",\n  \"name\": \"Nordics\",\n  \"countries\": [\n    \"SE\",\n    \"NO\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Update a region"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', function () { pm.response.to.have.status(201); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /social/chat/regions/delete — Delete a region",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-csrf-token",
+                "value": "{{csrfToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{adminBaseUrl}}/social/chat/regions/delete",
+              "host": [
+                "{{adminBaseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "regions",
+                "delete"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"regionId\": \"{{id}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Delete a region"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', function () { pm.response.to.have.status(201); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /social/chat/moderation/settings — A room's moderation settings",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{adminBaseUrl}}/social/chat/moderation/settings?roomId={{roomId}}",
+              "host": [
+                "{{adminBaseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "moderation",
+                "settings"
+              ],
+              "query": [
+                {
+                  "key": "roomId",
+                  "value": "{{roomId}}",
+                  "disabled": false
+                }
+              ]
+            },
+            "description": "A room's moderation settings"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /social/chat/moderation/settings — Save a room's moderation settings",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-csrf-token",
+                "value": "{{csrfToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{adminBaseUrl}}/social/chat/moderation/settings",
+              "host": [
+                "{{adminBaseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "moderation",
+                "settings"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"roomId\": \"{{id}}\",\n  \"linkPolicy\": \"NO_LINKS\",\n  \"spamProtection\": {\n    \"enabled\": true,\n    \"repeatCount\": 3,\n    \"windowSeconds\": 10\n  },\n  \"bannedWords\": [\n    \"spamword\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Save a room's moderation settings"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', function () { pm.response.to.have.status(201); });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "3. Moderation",
+      "item": [
+        {
+          "name": "GET /social/chat/reports — List reports",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{adminBaseUrl}}/social/chat/reports?limit=50",
+              "host": [
+                "{{adminBaseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "reports"
+              ],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "reportedUserId",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "before",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "limit",
+                  "value": "50",
+                  "disabled": false
+                }
+              ]
+            },
+            "description": "List reports"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /social/chat/reports/action — Action a report",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-csrf-token",
+                "value": "{{csrfToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{adminBaseUrl}}/social/chat/reports/action",
+              "host": [
+                "{{adminBaseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "reports",
+                "action"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reportId\": \"{{id}}\",\n  \"action\": \"DISMISS\",\n  \"note\": \"Not a violation\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Action a report"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', function () { pm.response.to.have.status(201); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /social/chat/report-reasons — List report reasons",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{adminBaseUrl}}/social/chat/report-reasons",
+              "host": [
+                "{{adminBaseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "report-reasons"
+              ]
+            },
+            "description": "List report reasons"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /social/chat/report-reasons — Add or change a report reason",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-csrf-token",
+                "value": "{{csrfToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{adminBaseUrl}}/social/chat/report-reasons",
+              "host": [
+                "{{adminBaseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "report-reasons"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"SPAM\",\n  \"label\": \"Spam\",\n  \"isActive\": true,\n  \"sortOrder\": 1\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Add or change a report reason"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', function () { pm.response.to.have.status(201); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /social/chat/bans — List bans",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{adminBaseUrl}}/social/chat/bans?limit=50",
+              "host": [
+                "{{adminBaseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "bans"
+              ],
+              "query": [
+                {
+                  "key": "before",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "limit",
+                  "value": "50",
+                  "disabled": false
+                },
+                {
+                  "key": "userId",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "activeOnly",
+                  "value": "",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "List bans"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /social/chat/bans — Ban a user (hours or permanent)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-csrf-token",
+                "value": "{{csrfToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{adminBaseUrl}}/social/chat/bans",
+              "host": [
+                "{{adminBaseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "bans"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userId\": \"someuser\",\n  \"reason\": \"Spam\",\n  \"note\": \"Repeated links\",\n  \"durationHours\": 24\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Ban a user (hours or permanent)"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', function () { pm.response.to.have.status(201); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /social/chat/bans/lift — Lift a ban",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-csrf-token",
+                "value": "{{csrfToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{adminBaseUrl}}/social/chat/bans/lift",
+              "host": [
+                "{{adminBaseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "bans",
+                "lift"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"banId\": \"{{id}}\",\n  \"note\": \"Appeal accepted\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Lift a ban"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', function () { pm.response.to.have.status(201); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /social/chat/retract — Retract a message",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-csrf-token",
+                "value": "{{csrfToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{adminBaseUrl}}/social/chat/retract",
+              "host": [
+                "{{adminBaseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "retract"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"messageId\": \"{{id}}\",\n  \"note\": \"Abusive\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Retract a message"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', function () { pm.response.to.have.status(201); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /social/chat/actions — Moderation log (append-only)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{adminBaseUrl}}/social/chat/actions?limit=50",
+              "host": [
+                "{{adminBaseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "actions"
+              ],
+              "query": [
+                {
+                  "key": "before",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "limit",
+                  "value": "50",
+                  "disabled": false
+                },
+                {
+                  "key": "actorType",
+                  "value": "",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Moderation log (append-only)"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /social/chat/hitters — Frequent hitters",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{adminBaseUrl}}/social/chat/hitters?limit=50",
+              "host": [
+                "{{adminBaseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "hitters"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "50",
+                  "disabled": false
+                }
+              ]
+            },
+            "description": "Frequent hitters"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /social/chat/report-stats — Report statistics",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/social/chat/report-stats?top=10",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "report-stats"
+              ],
+              "query": [
+                {
+                  "key": "top",
+                  "value": "10",
+                  "disabled": false
+                },
+                {
+                  "key": "from",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "to",
+                  "value": "",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Correct (actioned), false (dismissed), reviewed; by reason, top reporters, most reported."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "4. Staff and test users",
+      "item": [
+        {
+          "name": "GET /social/chat/staff/roles — Chat staff roles",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{adminBaseUrl}}/social/chat/staff/roles",
+              "host": [
+                "{{adminBaseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "staff",
+                "roles"
+              ]
+            },
+            "description": "Chat staff roles"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /social/chat/staff/assign-role — Assign a chat role (super admin)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-csrf-token",
+                "value": "{{csrfToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{adminBaseUrl}}/social/chat/staff/assign-role",
+              "host": [
+                "{{adminBaseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "staff",
+                "assign-role"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userId\": \"someuser\",\n  \"role\": \"MODERATOR\",\n  \"note\": \"Trusted member\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Super admin only."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', function () { pm.response.to.have.status(201); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /social/chat/staff/remove-role — Remove a chat role (super admin)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-csrf-token",
+                "value": "{{csrfToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{adminBaseUrl}}/social/chat/staff/remove-role",
+              "host": [
+                "{{adminBaseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "staff",
+                "remove-role"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userId\": \"someuser\",\n  \"note\": \"Stepped down\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Super admin only."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', function () { pm.response.to.have.status(201); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /social/chat/test-entitlements — Test users (stand-in facts)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{adminBaseUrl}}/social/chat/test-entitlements",
+              "host": [
+                "{{adminBaseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "test-entitlements"
+              ]
+            },
+            "description": "Test users (stand-in facts)"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /social/chat/test-entitlements — Add or change a test user",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-csrf-token",
+                "value": "{{csrfToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{adminBaseUrl}}/social/chat/test-entitlements",
+              "host": [
+                "{{adminBaseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "test-entitlements"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userId\": \"someuser\",\n  \"onCasino\": true,\n  \"wagerUsd\": \"500\",\n  \"premiumPlanIds\": [],\n  \"kycLevel\": 1,\n  \"isSiteOwner\": false,\n  \"level\": 5\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Add or change a test user"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', function () { pm.response.to.have.status(201); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /social/chat/test-entitlements/delete — Remove a test user",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-csrf-token",
+                "value": "{{csrfToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{adminBaseUrl}}/social/chat/test-entitlements/delete",
+              "host": [
+                "{{adminBaseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "test-entitlements",
+                "delete"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userId\": \"someuser\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Remove a test user"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', function () { pm.response.to.have.status(201); });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "5. Skins and media",
+      "item": [
+        {
+          "name": "GET /social/chat/skins — List skins",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{adminBaseUrl}}/social/chat/skins",
+              "host": [
+                "{{adminBaseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "skins"
+              ]
+            },
+            "description": "List skins"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /social/chat/skins — Create a skin",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-csrf-token",
+                "value": "{{csrfToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{adminBaseUrl}}/social/chat/skins",
+              "host": [
+                "{{adminBaseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "skins"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Gold\",\n  \"gradient\": \"linear-gradient(#f5d36b,#c28a1d)\",\n  \"borderColor\": \"#c28a1d\",\n  \"badgeIcon\": \"crown\",\n  \"cost\": \"0\",\n  \"isPremium\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Create a skin"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', function () { pm.response.to.have.status(201); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /social/chat/skins/activate — Make a skin selectable again",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-csrf-token",
+                "value": "{{csrfToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{adminBaseUrl}}/social/chat/skins/activate",
+              "host": [
+                "{{adminBaseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "skins",
+                "activate"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"id\": \"{{id}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Make a skin selectable again"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', function () { pm.response.to.have.status(201); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /social/chat/skins/deactivate — Deactivate a skin",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-csrf-token",
+                "value": "{{csrfToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{adminBaseUrl}}/social/chat/skins/deactivate",
+              "host": [
+                "{{adminBaseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "skins",
+                "deactivate"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"id\": \"{{id}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Deactivate a skin"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', function () { pm.response.to.have.status(201); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /social/chat/media — Uploaded media",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{adminBaseUrl}}/social/chat/media?limit=50",
+              "host": [
+                "{{adminBaseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "media"
+              ],
+              "query": [
+                {
+                  "key": "before",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "limit",
+                  "value": "50",
+                  "disabled": false
+                },
+                {
+                  "key": "flaggedOnly",
+                  "value": "",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Uploaded media"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /social/chat/media/flag — Flag an upload",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-csrf-token",
+                "value": "{{csrfToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{adminBaseUrl}}/social/chat/media/flag",
+              "host": [
+                "{{adminBaseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "media",
+                "flag"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"uploadId\": \"{{id}}\",\n  \"note\": \"Needs review\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Flag an upload"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', function () { pm.response.to.have.status(201); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /social/chat/media/delete — Take down an upload (kept for legal hold)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-csrf-token",
+                "value": "{{csrfToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{adminBaseUrl}}/social/chat/media/delete",
+              "host": [
+                "{{adminBaseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "media",
+                "delete"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"uploadId\": \"{{id}}\",\n  \"note\": \"Removed\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Take down an upload (kept for legal hold)"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', function () { pm.response.to.have.status(201); });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "6. Chat-wide settings",
+      "item": [
+        {
+          "name": "GET /social/chat/settings — Chat-wide settings document",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{adminBaseUrl}}/social/chat/settings",
+              "host": [
+                "{{adminBaseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "settings"
+              ]
+            },
+            "description": "Chat-wide settings document"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /social/chat/settings/preview — Effective settings for a country",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{adminBaseUrl}}/social/chat/settings/preview?country=FR",
+              "host": [
+                "{{adminBaseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "settings",
+                "preview"
+              ],
+              "query": [
+                {
+                  "key": "country",
+                  "value": "FR",
+                  "disabled": false
+                }
+              ]
+            },
+            "description": "Effective settings for a country"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /social/chat/settings — Save a settings patch (super admin)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-csrf-token",
+                "value": "{{csrfToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{adminBaseUrl}}/social/chat/settings",
+              "host": [
+                "{{adminBaseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "settings"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"patch\": {\n    \"global\": {\n      \"limits\": {\n        \"cooldownSeconds\": 10\n      }\n    }\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Super admin only."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', function () { pm.response.to.have.status(201); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /social/chat/settings/changes — Settings change history",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{adminBaseUrl}}/social/chat/settings/changes?limit=50",
+              "host": [
+                "{{adminBaseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "settings",
+                "changes"
+              ],
+              "query": [
+                {
+                  "key": "before",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "limit",
+                  "value": "50",
+                  "disabled": false
+                },
+                {
+                  "key": "status",
+                  "value": "",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Settings change history"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /social/chat/settings/rollback — Roll a settings change back (super admin)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-csrf-token",
+                "value": "{{csrfToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{adminBaseUrl}}/social/chat/settings/rollback",
+              "host": [
+                "{{adminBaseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "settings",
+                "rollback"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"changeId\": \"{{id}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Super admin only."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', function () { pm.response.to.have.status(201); });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "7. Modules 4–9: restrictions, ban edits, bot log, staff requests, ads, gifts, reverts, DMs and groups",
+      "item": [
+        {
+          "name": "GET /social/chat/restrictions — List restrictions",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{adminBaseUrl}}/social/chat/restrictions",
+              "host": [
+                "{{adminBaseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "restrictions"
+              ]
+            },
+            "description": "List restrictions"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /social/chat/restrictions — Restrict a user or a group",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{adminBaseUrl}}/social/chat/restrictions",
+              "host": [
+                "{{adminBaseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "restrictions"
+              ]
+            },
+            "description": "Restrict a user or a group",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"targetType\": \"USER\",\n  \"targetValue\": \"someuser\",\n  \"kind\": \"RESTRICT_ADS\",\n  \"reason\": \"Ad spam\",\n  \"durationHours\": 72\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', function () { pm.response.to.have.status(201); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /social/chat/restrictions/lift — Lift a restriction",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{adminBaseUrl}}/social/chat/restrictions/lift",
+              "host": [
+                "{{adminBaseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "restrictions",
+                "lift"
+              ]
+            },
+            "description": "Lift a restriction",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"restrictionId\": \"0192f6a0-0000-7000-8000-00000000aa01\",\n  \"note\": \"Appeal accepted\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', function () { pm.response.to.have.status(201); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /social/chat/restrictions/change — Change a restriction",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{adminBaseUrl}}/social/chat/restrictions/change",
+              "host": [
+                "{{adminBaseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "restrictions",
+                "change"
+              ]
+            },
+            "description": "Change a restriction",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"restrictionId\": \"0192f6a0-0000-7000-8000-00000000aa01\",\n  \"durationHours\": 6,\n  \"reason\": \"Shortened after appeal\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', function () { pm.response.to.have.status(201); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /social/chat/bans/change — Change a ban",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{adminBaseUrl}}/social/chat/bans/change",
+              "host": [
+                "{{adminBaseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "bans",
+                "change"
+              ]
+            },
+            "description": "Change a ban",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"banId\": \"0192f6a0-0000-7000-8000-00000000aa01\",\n  \"durationHours\": 12,\n  \"reason\": \"Second offence\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', function () { pm.response.to.have.status(201); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /social/chat/bot-log — Bot log",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{adminBaseUrl}}/social/chat/bot-log",
+              "host": [
+                "{{adminBaseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "bot-log"
+              ]
+            },
+            "description": "Bot log"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /social/chat/staff/requests — Staff requests (REPORT mode)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{adminBaseUrl}}/social/chat/staff/requests",
+              "host": [
+                "{{adminBaseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "staff",
+                "requests"
+              ]
+            },
+            "description": "Staff requests (REPORT mode)"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /social/chat/staff/requests/resolve — Approve or reject a staff request",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{adminBaseUrl}}/social/chat/staff/requests/resolve",
+              "host": [
+                "{{adminBaseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "staff",
+                "requests",
+                "resolve"
+              ]
+            },
+            "description": "Approve or reject a staff request",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"requestId\": \"0192f6a0-0000-7000-8000-00000000aa01\",\n  \"approve\": true,\n  \"note\": \"Agreed\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', function () { pm.response.to.have.status(201); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /social/chat/ads — List ads",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{adminBaseUrl}}/social/chat/ads",
+              "host": [
+                "{{adminBaseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "ads"
+              ]
+            },
+            "description": "List ads"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /social/chat/ads — Post a free admin ad",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{adminBaseUrl}}/social/chat/ads",
+              "host": [
+                "{{adminBaseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "ads"
+              ]
+            },
+            "description": "Post a free admin ad",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"content\": \"Weekend tournament starts Friday!\",\n  \"allRooms\": true,\n  \"pinMinutes\": 30,\n  \"repeatCount\": 2,\n  \"repeatGapMinutes\": 60\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', function () { pm.response.to.have.status(201); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /social/chat/ads/cancel — Cancel an ad",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{adminBaseUrl}}/social/chat/ads/cancel",
+              "host": [
+                "{{adminBaseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "ads",
+                "cancel"
+              ]
+            },
+            "description": "Cancel an ad",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"adId\": \"0192f6a0-0000-7000-8000-00000000aa01\",\n  \"refund\": \"UNUSED\",\n  \"note\": \"Misleading\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', function () { pm.response.to.have.status(201); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /social/chat/ads/revert — Revert ads in a time frame",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{adminBaseUrl}}/social/chat/ads/revert",
+              "host": [
+                "{{adminBaseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "ads",
+                "revert"
+              ]
+            },
+            "description": "Revert ads in a time frame",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"from\": \"2026-10-01T00:00:00Z\",\n  \"to\": \"2026-10-08T00:00:00Z\",\n  \"userIds\": [\n    \"someuser\"\n  ],\n  \"minUsd\": \"5\",\n  \"maxUsd\": \"500\",\n  \"adIds\": [],\n  \"pinnedOnly\": false,\n  \"dryRun\": true,\n  \"note\": \"Fraudulent payments\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', function () { pm.response.to.have.status(201); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /social/chat/gifts — List gifts",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{adminBaseUrl}}/social/chat/gifts",
+              "host": [
+                "{{adminBaseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "gifts"
+              ]
+            },
+            "description": "List gifts"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /social/chat/gifts/revert — Revert transfers in a time frame",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{adminBaseUrl}}/social/chat/gifts/revert",
+              "host": [
+                "{{adminBaseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "gifts",
+                "revert"
+              ]
+            },
+            "description": "Revert transfers in a time frame",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"from\": \"2026-10-01T00:00:00Z\",\n  \"to\": \"2026-10-08T00:00:00Z\",\n  \"userIds\": [],\n  \"currencies\": [\n    \"USDT\"\n  ],\n  \"minUsd\": \"1\",\n  \"refundFees\": true,\n  \"dryRun\": true,\n  \"note\": \"Exploit window\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', function () { pm.response.to.have.status(201); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /social/chat/commands — Command log",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{adminBaseUrl}}/social/chat/commands",
+              "host": [
+                "{{adminBaseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "commands"
+              ]
+            },
+            "description": "Command log"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /social/chat/dm/conversations — A user's conversations",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{adminBaseUrl}}/social/chat/dm/conversations?userId=someuser",
+              "host": [
+                "{{adminBaseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "dm",
+                "conversations"
+              ],
+              "query": [
+                {
+                  "key": "userId",
+                  "value": "someuser"
+                }
+              ]
+            },
+            "description": "A user's conversations"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /social/chat/dm/conversations/read — Read a conversation (with a reason)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{adminBaseUrl}}/social/chat/dm/conversations/read",
+              "host": [
+                "{{adminBaseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "dm",
+                "conversations",
+                "read"
+              ]
+            },
+            "description": "Read a conversation (with a reason)",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"conversationId\": \"0192f6a0-0000-7000-8000-00000000aa01\",\n  \"reason\": \"Investigating a scam report\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', function () { pm.response.to.have.status(201); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /social/chat/dm/groups — List groups",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{adminBaseUrl}}/social/chat/dm/groups",
+              "host": [
+                "{{adminBaseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "dm",
+                "groups"
+              ]
+            },
+            "description": "List groups"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "8. Modules 6–7: RainPool (settings, ON / OFF / MAINTAIN, reviews, reverts)",
+      "item": [
+        {
+          "name": "GET /social/rain/settings — RainPool Settings",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{adminBaseUrl}}/social/rain/settings",
+              "host": [
+                "{{adminBaseUrl}}"
+              ],
+              "path": [
+                "social",
+                "rain",
+                "settings"
+              ]
+            },
+            "description": "RainPool Settings"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /social/rain/settings — Save the RainPool Settings",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-csrf-token",
+                "value": "{{csrfToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{adminBaseUrl}}/social/rain/settings",
+              "host": [
+                "{{adminBaseUrl}}"
+              ],
+              "path": [
+                "social",
+                "rain",
+                "settings"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"expectedVersion\": 1,\n  \"config\": \"…the document from GET /social/rain/settings, edited…\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Save the RainPool Settings"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /social/rain/state — Rainpool countdown and queues",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{adminBaseUrl}}/social/rain/state",
+              "host": [
+                "{{adminBaseUrl}}"
+              ],
+              "path": [
+                "social",
+                "rain",
+                "state"
+              ]
+            },
+            "description": "Rainpool countdown and queues"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /social/rain/status — ON / OFF / MAINTAIN now",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-csrf-token",
+                "value": "{{csrfToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{adminBaseUrl}}/social/rain/status",
+              "host": [
+                "{{adminBaseUrl}}"
+              ],
+              "path": [
+                "social",
+                "rain",
+                "status"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"overall\": \"MAINTENANCE\",\n  \"note\": \"Rains are back at 18:00 UTC\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "ON / OFF / MAINTAIN now"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /social/rain/status/scheduled — Scheduled status changes",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{adminBaseUrl}}/social/rain/status/scheduled",
+              "host": [
+                "{{adminBaseUrl}}"
+              ],
+              "path": [
+                "social",
+                "rain",
+                "status",
+                "scheduled"
+              ]
+            },
+            "description": "Scheduled status changes"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /social/rain/status/schedule — Schedule a status change",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-csrf-token",
+                "value": "{{csrfToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{adminBaseUrl}}/social/rain/status/schedule",
+              "host": [
+                "{{adminBaseUrl}}"
+              ],
+              "path": [
+                "social",
+                "rain",
+                "status",
+                "schedule"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"applyAt\": \"2026-11-01T18:00:00Z\",\n  \"patch\": {\n    \"system\": \"OFF\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Schedule a status change"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', function () { pm.response.to.have.status(201); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /social/rain/status/schedule/cancel — Cancel a scheduled status change",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-csrf-token",
+                "value": "{{csrfToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{adminBaseUrl}}/social/rain/status/schedule/cancel",
+              "host": [
+                "{{adminBaseUrl}}"
+              ],
+              "path": [
+                "social",
+                "rain",
+                "status",
+                "schedule",
+                "cancel"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"id\": \"{{id}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Cancel a scheduled status change"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /social/rain/rains — Rains",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{adminBaseUrl}}/social/rain/rains",
+              "host": [
+                "{{adminBaseUrl}}"
+              ],
+              "path": [
+                "social",
+                "rain",
+                "rains"
+              ]
+            },
+            "description": "Rains"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /social/rain/rains/detail — One rain",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{adminBaseUrl}}/social/rain/rains/detail",
+              "host": [
+                "{{adminBaseUrl}}"
+              ],
+              "path": [
+                "social",
+                "rain",
+                "rains",
+                "detail"
+              ]
+            },
+            "description": "One rain"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /social/rain/reviews — MANUAL admin verification queue",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{adminBaseUrl}}/social/rain/reviews",
+              "host": [
+                "{{adminBaseUrl}}"
+              ],
+              "path": [
+                "social",
+                "rain",
+                "reviews"
+              ]
+            },
+            "description": "MANUAL admin verification queue"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /social/rain/reviews/approve — Approve a rain",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-csrf-token",
+                "value": "{{csrfToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{adminBaseUrl}}/social/rain/reviews/approve",
+              "host": [
+                "{{adminBaseUrl}}"
+              ],
+              "path": [
+                "social",
+                "rain",
+                "reviews",
+                "approve"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"rainId\": \"{{id}}\",\n  \"reason\": \"Verified with the user\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Approve a rain"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /social/rain/reviews/reject — Reject a rain",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-csrf-token",
+                "value": "{{csrfToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{adminBaseUrl}}/social/rain/reviews/reject",
+              "host": [
+                "{{adminBaseUrl}}"
+              ],
+              "path": [
+                "social",
+                "rain",
+                "reviews",
+                "reject"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"rainId\": \"{{id}}\",\n  \"reason\": \"Suspected stolen account\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Reject a rain"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /social/rain/reviews/request — Request the questionnaire / a KYC check",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-csrf-token",
+                "value": "{{csrfToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{adminBaseUrl}}/social/rain/reviews/request",
+              "host": [
+                "{{adminBaseUrl}}"
+              ],
+              "path": [
+                "social",
+                "rain",
+                "reviews",
+                "request"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"rainId\": \"{{id}}\",\n  \"questionnaire\": true,\n  \"kyc\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Request the questionnaire / a KYC check"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /social/rain/revert — Revert one rain",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-csrf-token",
+                "value": "{{csrfToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{adminBaseUrl}}/social/rain/revert",
+              "host": [
+                "{{adminBaseUrl}}"
+              ],
+              "path": [
+                "social",
+                "rain",
+                "revert"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"rainId\": \"{{id}}\",\n  \"payerRefund\": \"REFUND\",\n  \"shortfall\": \"ZERO\",\n  \"reason\": \"Exploit\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Revert one rain"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /social/rain/revert/bulk — Revert rains by filter",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-csrf-token",
+                "value": "{{csrfToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{adminBaseUrl}}/social/rain/revert/bulk",
+              "host": [
+                "{{adminBaseUrl}}"
+              ],
+              "path": [
+                "social",
+                "rain",
+                "revert",
+                "bulk"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"kind\": \"ALL\",\n  \"from\": \"2026-10-01T00:00:00Z\",\n  \"to\": \"2026-10-02T00:00:00Z\",\n  \"currencies\": [\n    \"BTC\"\n  ],\n  \"who\": {\n    \"role\": \"RECIPIENT\",\n    \"users\": [\n      \"bob\"\n    ],\n    \"group\": null\n  },\n  \"payerRefund\": \"REFUND\",\n  \"shortfall\": \"ZERO\",\n  \"reason\": \"Multi-account farming\",\n  \"dryRun\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Revert rains by filter"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /social/rain/trigger — Rain the Rainpool now",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-csrf-token",
+                "value": "{{csrfToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{adminBaseUrl}}/social/rain/trigger",
+              "host": [
+                "{{adminBaseUrl}}"
+              ],
+              "path": [
+                "social",
+                "rain",
+                "trigger"
+              ]
+            },
+            "description": "Rain the Rainpool now"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /social/rain/jobs — Queued rain jobs",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{adminBaseUrl}}/social/rain/jobs",
+              "host": [
+                "{{adminBaseUrl}}"
+              ],
+              "path": [
+                "social",
+                "rain",
+                "jobs"
+              ]
+            },
+            "description": "Queued rain jobs"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /social/rain/repeats — Auto-repeat series",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{adminBaseUrl}}/social/rain/repeats",
+              "host": [
+                "{{adminBaseUrl}}"
+              ],
+              "path": [
+                "social",
+                "rain",
+                "repeats"
+              ]
+            },
+            "description": "Auto-repeat series"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /social/rain/repeats/cancel — Stop an auto-repeat series",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-csrf-token",
+                "value": "{{csrfToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{adminBaseUrl}}/social/rain/repeats/cancel",
+              "host": [
+                "{{adminBaseUrl}}"
+              ],
+              "path": [
+                "social",
+                "rain",
+                "repeats",
+                "cancel"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"repeatId\": \"{{id}}\",\n  \"reason\": \"Spam\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Stop an auto-repeat series"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /social/rain/audit — Rain audit log",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{adminBaseUrl}}/social/rain/audit",
+              "host": [
+                "{{adminBaseUrl}}"
+              ],
+              "path": [
+                "social",
+                "rain",
+                "audit"
+              ]
+            },
+            "description": "Rain audit log"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /social/rain/dev-prices — Development USD rates",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{adminBaseUrl}}/social/rain/dev-prices",
+              "host": [
+                "{{adminBaseUrl}}"
+              ],
+              "path": [
+                "social",
+                "rain",
+                "dev-prices"
+              ]
+            },
+            "description": "Development USD rates"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /social/rain/dev-prices — Set development USD rates",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-csrf-token",
+                "value": "{{csrfToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{adminBaseUrl}}/social/rain/dev-prices",
+              "host": [
+                "{{adminBaseUrl}}"
+              ],
+              "path": [
+                "social",
+                "rain",
+                "dev-prices"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"prices\": [\n    {\n      \"currency\": \"BTC\",\n      \"usdPrice\": \"65000\"\n    },\n    {\n      \"currency\": \"ETH\",\n      \"usdPrice\": \"3000\"\n    },\n    {\n      \"currency\": \"USDT\",\n      \"usdPrice\": \"1\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Set development USD rates"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

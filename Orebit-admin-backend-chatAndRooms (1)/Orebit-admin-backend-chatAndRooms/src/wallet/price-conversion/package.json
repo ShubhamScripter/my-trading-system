@@ -1,0 +1,42 @@
+{
+  "name": "orebit-admin-price-conversion",
+  "private": true,
+  "scripts": {
+    "test": "npm run check && npm run test:provision && npm run test:prisma && tsc -p tsconfig.test.json && node --no-warnings --require ./test-setup.cjs --test --test-concurrency=1 .test-dist/src/wallet/price-conversion/price-conversion.contracts.spec.js .test-dist/src/wallet/price-conversion/price-conversion.ownership.spec.js .test-dist/src/wallet/price-conversion/price-conversion.wallet-compatibility.spec.js .test-dist/src/wallet/price-conversion/price-conversion.http.spec.js .test-dist/src/wallet/price-conversion/price-conversion.persistence.spec.js .test-dist/src/wallet/price-conversion/price-conversion.catalogue.persistence.spec.js .test-dist/src/wallet/price-conversion/price-conversion.lifecycle.spec.js .test-dist/src/wallet/price-conversion/price-conversion.bootstrap.spec.js .test-dist/src/wallet/price-conversion/price-conversion.writer.spec.js .test-dist/src/wallet/price-conversion/price-conversion.transaction-cleanup.spec.js .test-dist/src/wallet/price-conversion/price-conversion.review-fixes.spec.js .test-dist/src/wallet/price-conversion/price-conversion.security.persistence.spec.js .test-dist/src/wallet/price-conversion/price-conversion.quality.spec.js .test-dist/src/wallet/price-conversion/price-conversion.repositories.spec.js .test-dist/src/wallet/price-conversion/price-conversion.policy.spec.js && npm run test:scheduled",
+    "test:provision": "node ./provision-test-database.cjs",
+    "test:prisma": "node ./verify-test-prisma.mjs",
+    "test:scheduled": "node --no-warnings ../../../../orebit-backend/src/wallet/price-conversion/node_modules/tsx/dist/cli.mjs --tsconfig tsconfig.cross.json --test ./scheduled-config.integration.mjs",
+    "test:local-api": "tsc -p tsconfig.test.json && node --no-warnings --require ./test-setup.cjs --test --test-concurrency=1 .test-dist/src/wallet/price-conversion/price-conversion.local-api.spec.js",
+    "check": "npm run check:local && npm run check:parent",
+    "check:local": "tsc --noEmit -p tsconfig.json",
+    "check:parent": "tsc --noEmit -p tsconfig.parent.json"
+  },
+  "dependencies": {
+    "@nestjs/common": "^11.0.1",
+    "@nestjs/core": "^11.0.1",
+    "@prisma/client": "^6.4.0",
+    "@simplewebauthn/server": "^13.1.1",
+    "@types/jsonwebtoken": "^9.0.10",
+    "@types/pg": "^8.23.1",
+    "argon2": "^0.41.1",
+    "fastify": "^5.12.1",
+    "ioredis": "^6.0.0",
+    "jsonwebtoken": "^9.0.3",
+    "nodemailer": "^9.1.0",
+    "pg": "^8.23.0",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.1",
+    "zod": "^3.24.2"
+  },
+  "devDependencies": {
+    "@nestjs/testing": "^11.0.1",
+    "@fastify/cookie": "^11.1.2",
+    "@types/node": "^22.13.4",
+    "@types/nodemailer": "^6.4.17",
+    "prisma": "^6.4.0",
+    "typescript": "^5.7.3"
+  },
+  "overrides": {
+    "deepmerge-ts": "8.0.2"
+  }
+}

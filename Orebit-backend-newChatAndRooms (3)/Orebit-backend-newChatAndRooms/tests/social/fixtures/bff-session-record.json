@@ -1,0 +1,11 @@
+{
+  "note": "A session record exactly as the new cookie auth (auth-wallet-integration, auth/security/bff.session.ts `write`) stores it under bff:session:<tagged handle>. If the auth changes its record, update this fixture and chat.session.adapter.ts together.",
+  "handle": "h_7f3c2a1e9b4d8c6f0a2e4b6d8f1a3c5e",
+  "record": {
+    "sessionId": "0192f6a0-0000-7000-8000-00000000aa01",
+    "accessToken": "<replaced by the test with a freshly signed access token>",
+    "accessExpiresAt": 0,
+    "refreshSealed": "v1.c2VhbGVk.aXY.dGFn",
+    "expiresAt": 0
+  }
+}

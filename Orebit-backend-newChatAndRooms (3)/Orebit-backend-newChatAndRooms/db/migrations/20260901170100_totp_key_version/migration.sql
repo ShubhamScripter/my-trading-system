@@ -1,0 +1,43 @@
+-- Version the TOTP secret envelope, so it can be bound to its own row.
+--
+-- ─── The defect ──────────────────────────────────────────────────────────────
+--
+-- `sealSecret`/`openSecret` used AES-256-GCM with a random IV and a real auth tag —
+-- correct as far as it went — but passed no additional authenticated data, and
+-- neither function took a user or factor id. Nothing tied an envelope to the row
+-- holding it. So the three secret columns could be copied from one factor to another,
+-- or from one USER to another, and would decrypt cleanly into a working
+-- authenticator. The tag proves the ciphertext was not altered; it said nothing about
+-- where it belonged.
+--
+-- There was also one key and no way to name a second, so `TOTP_SECRET_KEY` could not
+-- be rotated without orphaning every enrolled authenticator.
+--
+-- ─── Why a column, and not simply adding AAD ─────────────────────────────────
+--
+-- Because AAD is not optional at decryption time. A row sealed WITHOUT it fails its
+-- tag check the moment you try to open it WITH it, and the two are
+-- indistinguishable from the stored bytes. Adding AAD in place would therefore have
+-- broken every authenticator already enrolled, silently, on the next sign-in — and
+-- `openSecret` throws rather than returning wrong bytes, so the symptom would be
+-- every legitimate code being rejected with no explanation.
+--
+-- The column tells the two apart:
+--
+--   1  the original envelope — one key, no AAD
+--   2  AAD over (user_id, id)
+--
+-- DEFAULT 1 is what makes this migration a no-op for existing rows: they were
+-- written under v1 rules and are correctly labelled as such. New enrollments write
+-- the current version, and a v1 row is re-sealed as v2 the next time it verifies, so
+-- the old format drains without a backfill and without a window where a user cannot
+-- sign in.
+--
+-- NOT NULL with a default rather than nullable: "no version recorded" and "version 1"
+-- would be the same fact, and leaving it expressible as null invites a later reader
+-- to treat the absence as "modern" — which is the direction that fails open.
+ALTER TABLE "identity"."totp_factors"
+  ADD COLUMN "key_version" INTEGER NOT NULL DEFAULT 1;
+
+-- No index. The column is only ever read as part of loading the factor row that is
+-- about to be opened, and never searched or filtered on.

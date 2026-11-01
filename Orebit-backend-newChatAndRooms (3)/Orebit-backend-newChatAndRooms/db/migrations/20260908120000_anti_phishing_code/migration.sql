@@ -1,0 +1,68 @@
+-- The anti-phishing code: a short string the account's owner chooses, printed in the
+-- emails this service sends so a reader can distinguish a genuine one from a forgery.
+--
+-- ─── Why ENCRYPTED rather than hashed ────────────────────────────────────────
+--
+-- Every other user-chosen secret in this schema is hashed and never read back:
+-- `credentials.password_hash` and `payment_pins.pin_hash` are argon2id,
+-- `recovery_codes.code_hash` is sha256+pepper. All of them only ever need a
+-- comparison, so a one-way function is strictly better — it cannot be reversed out of
+-- a stolen dump at all.
+--
+-- This value has to be READ BACK, on every outbound email, because displaying it is
+-- the entire feature. A hash would make it unusable. That is the same argument
+-- `totp_factors.secret_ciphertext` makes ("verifying a code requires REGENERATING it
+-- from the secret"), and this is the second and only other place in this schema where
+-- it applies.
+--
+-- Plaintext was the other candidate and is rejected. The value does end up in an
+-- inbox, so it is not a high-value secret in the way a PIN is — but a database reader
+-- holding every account's code could forge mail that passes the precise check this
+-- feature teaches users to make, for every user at once. That does not merely leak a
+-- preference; it inverts the feature into an attack tool. So it gets the envelope.
+--
+-- ─── Why four columns on `users` rather than a table of its own ──────────────
+--
+-- `payment_pins` is the precedent for a small per-account security row and this
+-- deliberately does not follow it. The difference is the mail path: EVERY outbound
+-- email needs this value, and the callers that send notifications already load the
+-- `users` row to get the address. On `users` the value arrives with a read that was
+-- already happening; in a side table it would add a query to every email the service
+-- sends — including the fire-and-forget notifications whose whole contract is that
+-- they put no round trip on the request path.
+--
+-- Four columns rather than one concatenated blob, so a rotation can rewrite them per
+-- row. That is `totp_factors`' reason and it applies unchanged.
+--
+-- ─── The AAD, and why `key_version` is stored ────────────────────────────────
+--
+-- The envelope is bound to `anti-phishing:v1:<user_id>`, so these four columns cannot
+-- be copied onto another account's row and opened — the tag check fails. That is the
+-- defect TOTP envelope v2 was introduced to fix, applied here from the start, which is
+-- why there is no v1-without-AAD case to carry.
+--
+-- `key_version` is stored because the bytes cannot say which key opens them. The ring
+-- is shared with TOTP (`config.totpKeyRing`); domain separation is the AAD. See
+-- src/utils/sealed-secret.ts for the operational obligation that sharing creates —
+-- `db/totp-rotate.ts --status` counts these rows, so a key version cannot read as
+-- drainable while anti-phishing rows still name it.
+--
+-- ─── Why nullable, and why there is no backfill ──────────────────────────────
+--
+-- NULL ciphertext IS "no code configured", which is the truth for every account that
+-- exists when this migration runs. There is no flag column to disagree with it, and
+-- nothing to invent — a backfill would have to make up a code the user never chose,
+-- and a made-up code printed in their email is worse than none.
+--
+-- The four columns are written and cleared together, always inside one statement, so
+-- there is no instant at which some are set and others are not. Nothing reads them
+-- individually.
+--
+-- No index. Every read is by primary key: the code is resolved for one account at a
+-- time, on a row the caller has already loaded or is loading anyway.
+ALTER TABLE "identity"."users"
+  ADD COLUMN "anti_phishing_ciphertext"  BYTEA,
+  ADD COLUMN "anti_phishing_iv"          BYTEA,
+  ADD COLUMN "anti_phishing_tag"         BYTEA,
+  ADD COLUMN "anti_phishing_key_version" INTEGER,
+  ADD COLUMN "anti_phishing_set_at"      TIMESTAMPTZ;

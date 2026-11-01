@@ -1,0 +1,7 @@
+.env
+node_modules/
+generated/
+package-lock.json
+.test-dist/*
+!.test-dist/package.json
+schema.test.prisma

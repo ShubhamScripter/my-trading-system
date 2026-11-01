@@ -1,0 +1,92 @@
+# The command developers are expected to trust, run on every push.
+#
+# `npm test` includes tests/redis/quota.integration.spec.ts, which exercises the
+# QuotaService Lua against a REAL Redis — two-pass all-or-nothing, the sliding window,
+# and the idempotent refund are behaviours of Redis executing that script, and a fake
+# sorted set proves none of them. That suite skips when nothing answers, loudly but
+# harmlessly, so that a developer without Docker does not see red for an environment
+# problem. The consequence is that it only actually runs somewhere that provides a
+# Redis, and until this file existed nowhere did.
+#
+# The service containers below are that somewhere. Both mirror docker-compose.yml.
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+
+    services:
+      # The cache instance. Configured to discard under pressure, exactly as in
+      # production — that is what makes it wrong for the queue and right for counters.
+      redis-cache:
+        image: redis:7-alpine
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 5
+
+      # The durable instance. `appendonly yes` and `noeviction`, because a queued
+      # one-time code must survive a restart and the server must refuse writes rather
+      # than silently evict a job.
+      redis-durable:
+        image: redis:7-alpine
+        ports: ['6380:6379']
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 5
+
+    env:
+      # No password here, unlike compose: these containers are reachable only from
+      # this job's network. The spec's default URL carries the compose credential, so
+      # TEST_REDIS_URL is set explicitly rather than relying on it.
+      TEST_REDIS_URL: redis://127.0.0.1:6379
+      REDIS_URL: redis://127.0.0.1:6379
+      REDIS_DURABLE_URL: redis://127.0.0.1:6380
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      # `ci` rather than `install`: the lockfile is the input, and a build that
+      # silently resolves a different tree is not the build anyone reviewed.
+      - run: npm ci
+
+      # The Prisma client is generated, not committed, so typecheck cannot run without
+      # this — every `@prisma/client` import would be unresolved.
+      - run: npm run prisma:generate
+
+      - run: npm run check
+
+      - run: npm run build
+
+      # The whole suite, live-Redis specs included. If this is green and a developer's
+      # local run is not, the difference is their environment rather than the code.
+      - run: npm test
+
+      # Chat module test suite: 28 test suites, 650+ unit and integration tests
+      - run: npm run test:chat
+
+      # Production dependencies only. A dev-only advisory is worth knowing about but is
+      # not a reason to fail a build, and treating the two the same trains people to
+      # ignore both.
+      - run: npm audit --omit=dev
+
+      # Trailing whitespace and blank lines at EOF, against the merge base.
+      - run: git diff --check origin/${{ github.base_ref || 'main' }}...HEAD
+        if: github.event_name == 'pull_request'

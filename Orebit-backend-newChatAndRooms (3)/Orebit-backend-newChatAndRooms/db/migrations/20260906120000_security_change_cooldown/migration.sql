@@ -1,0 +1,36 @@
+-- The security cooldown: freeze 2FA, the Payment PIN and the password for a period
+-- after the account's email address moves.
+--
+-- ─── Why a column on `users` and not a query against `retained_emails` ───────
+--
+-- `retained_emails` already records that an address was released, and it is the
+-- obvious thing to reach for. It is the wrong authority for this, in three separate
+-- ways, each of which SHORTENS or ERASES a security freeze without any error:
+--
+--   * a recovery `restore` DELETES the row, so the freeze would vanish the moment a
+--     user exercised the recovery flow — including a recovery the attacker performed;
+--   * a recovery `replace` renews `expires_at` but leaves `created_at` at the ORIGINAL
+--     change, so neither column is the time of the change that is actually current;
+--   * `changeEmail` deletes the caller's own rows when an address is reclaimed.
+--
+-- Its `expires_at` is also the RESERVATION lifetime — thirty days, chosen so a user
+-- who changed by mistake can still get the address back. That number answers "how long
+-- may nobody else register this", which is a different question with a different right
+-- answer from "how long is this account's security frozen". The two are deliberately
+-- independent: see `SECURITY_COOLDOWN` in auth/auth.constants.ts, twenty-four hours.
+--
+-- ─── Why nullable, and why there is no backfill ──────────────────────────────
+--
+-- NULL means "this address has never moved", which is the truth for every account that
+-- exists when this migration runs and for every account registered afterwards. A
+-- backfill would have to invent a change that did not happen, and inventing one in the
+-- past is the only direction that is safe — so NULL, which the policy reads as "no
+-- cooldown", is exactly that value and needs no write.
+--
+-- It also legitimately returns to NULL: a recovery `restore` puts the account back on
+-- the address it had, which un-does the change the freeze existed for.
+--
+-- No index. Every read is by primary key — the policy resolves one account at a time,
+-- and the race-safe read is a `SELECT ... FOR UPDATE` on that same row.
+ALTER TABLE "identity"."users"
+  ADD COLUMN "email_changed_at" TIMESTAMPTZ;

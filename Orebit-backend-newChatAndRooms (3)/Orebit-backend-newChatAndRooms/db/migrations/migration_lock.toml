@@ -1,0 +1,4 @@
+# Provider lock — commit this, never hand-edit it.
+# Prisma refuses to apply a migration history generated for a different database
+# provider, and this file is how it knows which one that was.
+provider = "postgresql"

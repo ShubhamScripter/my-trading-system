@@ -1,0 +1,88 @@
+name: Main Promotion Policy
+
+on:
+  pull_request:
+    branches:
+      - main
+    types:
+      - opened
+      - reopened
+      - synchronize
+  pull_request_review:
+    types:
+      - submitted
+      - dismissed
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  main-promotion-policy:
+    name: Main Promotion Policy
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Validate source branch and owner approval
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          SOURCE_BRANCH: ${{ github.event.pull_request.head.ref }}
+          SOURCE_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name }}
+          TARGET_REPOSITORY: ${{ github.event.repository.full_name }}
+        run: |
+          set -euo pipefail
+
+          OWNER_1="celzar"
+          OWNER_2="celzarop"
+
+          echo "Source branch: ${SOURCE_BRANCH}"
+          echo "Source repository: ${SOURCE_REPOSITORY}"
+
+          if [ "${SOURCE_BRANCH}" != "qa" ]; then
+            echo "ERROR: Only qa can create a PR into main."
+            exit 1
+          fi
+
+          if [ "${SOURCE_REPOSITORY}" != "${TARGET_REPOSITORY}" ]; then
+            echo "ERROR: Source branch must come from this repository."
+            exit 1
+          fi
+
+          gh api \
+            -H "Accept: application/vnd.github+json" \
+            "/repos/${REPO}/pulls/${PR_NUMBER}/reviews" \
+            > /tmp/reviews.json
+
+          has_current_approval() {
+            local reviewer="$1"
+
+            jq -e \
+              --arg reviewer "$reviewer" \
+              --arg sha "$HEAD_SHA" '
+                [
+                  .[]
+                  | select(
+                      .user.login == $reviewer
+                      and .state == "APPROVED"
+                      and .commit_id == $sha
+                    )
+                ]
+                | length > 0
+              ' /tmp/reviews.json >/dev/null
+          }
+
+          if has_current_approval "${OWNER_1}"; then
+            echo "SUCCESS: ${OWNER_1} approved."
+            exit 0
+          fi
+
+          if has_current_approval "${OWNER_2}"; then
+            echo "SUCCESS: ${OWNER_2} approved."
+            exit 0
+          fi
+
+          echo "ERROR: ${OWNER_1} or ${OWNER_2} must approve."
+          exit 1

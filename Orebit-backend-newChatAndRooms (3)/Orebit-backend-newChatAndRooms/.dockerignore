@@ -1,0 +1,30 @@
+# Dependencies & Build Outputs
+node_modules
+dist
+build
+
+# Environment & Secrets
+.env
+.env.*
+*.env
+!.env.example
+
+# Git
+.git
+.gitignore
+.gitattributes
+
+# Test & Coverage
+coverage
+tests
+vitest.config.ts
+
+# Documentation & Markdown
+*.md
+docs
+
+# OS & Editor
+.DS_Store
+.vscode
+.idea
+*.log

@@ -1,0 +1,5757 @@
+{
+  "info": {
+    "_postman_id": "orebit-chat-user-api",
+    "name": "Orebit Chat — User API",
+    "description": "Chat HTTP routes of the user backend (default http://localhost:3005). Sign in first with the \"0. Sign in\" request: it stores the `orebit_session` cookie in Postman's cookie jar and the CSRF token in `csrfToken`. Every POST/PUT sends `x-orebit-csrf`. Set `roomId` (a room id or slug), `messageId` and `userId` in the collection variables. There is no bearer token. The socket is documented in `orebit-chat-socket.testing-guide.json`.\n\nGenerated from the chat section of openapi.json; tests/social/chat.openapi.spec.ts checks that every chat route is here.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3005"
+    },
+    {
+      "key": "identifier",
+      "value": "your-username-or-email"
+    },
+    {
+      "key": "password",
+      "value": "your-password"
+    },
+    {
+      "key": "csrfToken",
+      "value": ""
+    },
+    {
+      "key": "roomId",
+      "value": "global"
+    },
+    {
+      "key": "messageId",
+      "value": ""
+    },
+    {
+      "key": "userId",
+      "value": ""
+    },
+    {
+      "key": "mediaId",
+      "value": ""
+    },
+    {
+      "key": "conversationId",
+      "value": ""
+    },
+    {
+      "key": "groupId",
+      "value": ""
+    },
+    {
+      "key": "dmMessageId",
+      "value": ""
+    },
+    {
+      "key": "reportId",
+      "value": ""
+    },
+    {
+      "key": "requestId",
+      "value": ""
+    },
+    {
+      "key": "restrictionId",
+      "value": ""
+    },
+    {
+      "key": "banId",
+      "value": ""
+    },
+    {
+      "key": "adId",
+      "value": ""
+    },
+    {
+      "key": "giftId",
+      "value": ""
+    },
+    {
+      "key": "inviteId",
+      "value": ""
+    },
+    {
+      "key": "ticketId",
+      "value": ""
+    },
+    {
+      "key": "rainId",
+      "value": ""
+    },
+    {
+      "key": "repeatId",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "0. Sign in (sets the session cookie)",
+      "item": [
+        {
+          "name": "POST /auth/login — password",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"step\": \"password\",\n  \"identifier\": \"{{identifier}}\",\n  \"password\": \"{{password}}\",\n  \"captchaProvider\": \"TURNSTILE\",\n  \"captchaToken\": \"XXXX.DUMMY.TOKEN.XXXX\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "The `captchaToken` above is Cloudflare's always-pass test token and only works with the Turnstile test keys of the development `.env`. A browser answer of `outcome: \"session\"` sets the `orebit_session` and `orebit_csrf` cookies; `mfa_required` means finish with `POST /auth/2fa/verify` first."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () { pm.response.to.have.status(200); });",
+                  "const body = pm.response.json();",
+                  "const csrf = (body.data && body.data.session && body.data.session.csrfToken) || pm.cookies.get('orebit_csrf');",
+                  "if (csrf) { pm.collectionVariables.set('csrfToken', csrf); }",
+                  "pm.test('a session was opened', function () { pm.expect(body.data.outcome).to.eql('session'); });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "1. Chat — rooms",
+      "item": [
+        {
+          "name": "GET /social/chat/rooms — List the rooms the user may see",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/social/chat/rooms?limit=50",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "rooms"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "50",
+                  "disabled": false
+                },
+                {
+                  "key": "cursor",
+                  "value": "",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "The lobby. Hidden rooms are not listed; closed rooms come with `accessMode`, `reason` and `requirement` so the app can say what is needed. `onlineCount` is live. Also returns `gifProvider`."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () { pm.response.to.have.status(200); });",
+                  "pm.test('answers JSON', function () { pm.response.to.be.json; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /social/chat/rooms/{roomId}/rules — Room rules box",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/social/chat/rooms/:roomId/rules",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "rooms",
+                ":roomId",
+                "rules"
+              ],
+              "variable": [
+                {
+                  "key": "roomId",
+                  "value": "{{roomId}}"
+                }
+              ]
+            },
+            "description": "The rules the admin wrote for this room; `[]` when there are none."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () { pm.response.to.have.status(200); });",
+                  "pm.test('answers JSON', function () { pm.response.to.be.json; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /social/chat/rooms/{roomId}/users — Online members (on request)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/social/chat/rooms/:roomId/users?limit=50",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "rooms",
+                ":roomId",
+                "users"
+              ],
+              "variable": [
+                {
+                  "key": "roomId",
+                  "value": "{{roomId}}"
+                }
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "50",
+                  "disabled": false
+                },
+                {
+                  "key": "cursor",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "prefix",
+                  "value": "",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Count, a page of members, a cursor and a username-prefix search. Not pushed over the socket; ask when the member list is opened."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () { pm.response.to.have.status(200); });",
+                  "pm.test('answers JSON', function () { pm.response.to.be.json; });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "2. Chat — messages",
+      "item": [
+        {
+          "name": "GET /social/chat/rooms/{roomId}/messages — Room history (and reconnect catch-up)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/social/chat/rooms/:roomId/messages?limit=50",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "rooms",
+                ":roomId",
+                "messages"
+              ],
+              "variable": [
+                {
+                  "key": "roomId",
+                  "value": "{{roomId}}"
+                }
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "50",
+                  "disabled": false
+                },
+                {
+                  "key": "cursor",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "after",
+                  "value": "",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Newest first, paged with `cursor`. To catch up after a dropped connection pass `after=<id of the last message you had>`: you get the newer messages oldest first (not together with `cursor`)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () { pm.response.to.have.status(200); });",
+                  "pm.test('answers JSON', function () { pm.response.to.be.json; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /social/chat/rooms/{roomId}/pinned — Pinned messages",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/social/chat/rooms/:roomId/pinned?limit=50",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "rooms",
+                ":roomId",
+                "pinned"
+              ],
+              "variable": [
+                {
+                  "key": "roomId",
+                  "value": "{{roomId}}"
+                }
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "50",
+                  "disabled": false
+                },
+                {
+                  "key": "cursor",
+                  "value": "",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Pinned messages"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () { pm.response.to.have.status(200); });",
+                  "pm.test('answers JSON', function () { pm.response.to.be.json; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /social/chat/messages/media — Send a media message over HTTP",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-orebit-csrf",
+                "value": "{{csrfToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/social/chat/messages/media",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "messages",
+                "media"
+              ]
+            },
+            "description": "Same path as the socket `send_message`: same limits, access and moderation; delivered to open sockets the same way. Upload the file first with `POST /social/chat/upload`, or use a GIF URL from the configured provider.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"roomId\": \"global\",\n  \"mediaUrl\": \"https://media.tenor.com/example/cat.gif\",\n  \"mediaType\": \"gif\",\n  \"clientMessageId\": \"0192f6a0-0000-7000-8000-00000000aa01\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', function () { pm.response.to.have.status(201); });",
+                  "pm.test('answers JSON', function () { pm.response.to.be.json; });",
+                  "const m = pm.response.json(); if (m.data && m.data.messageId) pm.collectionVariables.set('messageId', m.data.messageId);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /social/chat/messages/{messageId}/retract — Retract a message",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-orebit-csrf",
+                "value": "{{csrfToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/social/chat/messages/:messageId/retract",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "messages",
+                ":messageId",
+                "retract"
+              ],
+              "variable": [
+                {
+                  "key": "messageId",
+                  "value": "{{messageId}}"
+                }
+              ]
+            },
+            "description": "Authors within the retract window, and staff. The message is kept for staff and shown retracted to everyone else.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"note\": \"sent by mistake\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', function () { pm.response.to.have.status(201); });",
+                  "pm.test('answers JSON', function () { pm.response.to.be.json; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /social/chat/tags — Where I was tagged",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/social/chat/tags?limit=50",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "tags"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "50",
+                  "disabled": false
+                },
+                {
+                  "key": "cursor",
+                  "value": "",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Messages that @mention the user, only from rooms the user may view now."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () { pm.response.to.have.status(200); });",
+                  "pm.test('answers JSON', function () { pm.response.to.be.json; });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "3. Chat — people",
+      "item": [
+        {
+          "name": "GET /social/chat/users/{userId}/profile — Profile card",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/social/chat/users/:userId/profile",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "users",
+                ":userId",
+                "profile"
+              ],
+              "variable": [
+                {
+                  "key": "userId",
+                  "value": "{{userId}}"
+                }
+              ]
+            },
+            "description": "Profile card"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () { pm.response.to.have.status(200); });",
+                  "pm.test('answers JSON', function () { pm.response.to.be.json; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /social/chat/preferences — My chat preferences",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/social/chat/preferences",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "preferences"
+              ],
+              "query": [
+                {
+                  "key": "lastRoomId",
+                  "value": "",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Also tells the app which room to open (`effectiveDefaultRoomId`). The last room is remembered on the server; `lastRoomId` is only a fallback hint from the browser."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () { pm.response.to.have.status(200); });",
+                  "pm.test('answers JSON', function () { pm.response.to.be.json; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "PUT /social/chat/preferences — Change my chat preferences",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "x-orebit-csrf",
+                "value": "{{csrfToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/social/chat/preferences",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "preferences"
+              ]
+            },
+            "description": "Change my chat preferences",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"hideIdentity\": true,\n  \"activeSkinId\": null\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () { pm.response.to.have.status(200); });",
+                  "pm.test('answers JSON', function () { pm.response.to.be.json; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /social/chat/skins — Skins the user may use",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/social/chat/skins",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "skins"
+              ]
+            },
+            "description": "Skins the user may use"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () { pm.response.to.have.status(200); });",
+                  "pm.test('answers JSON', function () { pm.response.to.be.json; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /social/chat/warnings — My warnings",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/social/chat/warnings?limit=50",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "warnings"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "50",
+                  "disabled": false
+                },
+                {
+                  "key": "cursor",
+                  "value": "",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Never shows who issued a warning."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () { pm.response.to.have.status(200); });",
+                  "pm.test('answers JSON', function () { pm.response.to.be.json; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /social/chat/limitations — My limitations",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/social/chat/limitations?limit=50",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "limitations"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "50",
+                  "disabled": false
+                },
+                {
+                  "key": "cursor",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "from",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "to",
+                  "value": "",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Your own bans, restrictions, refused or cancelled ads and reverted gifts. Only the reason written for you."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () { pm.response.to.have.status(200); });",
+                  "pm.test('answers JSON', function () { pm.response.to.be.json; });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "4. Chat — reports",
+      "item": [
+        {
+          "name": "POST /social/chat/users/{userId}/report — Report a user",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-orebit-csrf",
+                "value": "{{csrfToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/social/chat/users/:userId/report",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "users",
+                ":userId",
+                "report"
+              ],
+              "variable": [
+                {
+                  "key": "userId",
+                  "value": "{{userId}}"
+                }
+              ]
+            },
+            "description": "Report a user",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"SPAM\",\n  \"details\": \"Posts the same link everywhere\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', function () { pm.response.to.have.status(201); });",
+                  "pm.test('answers JSON', function () { pm.response.to.be.json; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /social/chat/messages/{messageId}/report — Report a message",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-orebit-csrf",
+                "value": "{{csrfToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/social/chat/messages/:messageId/report",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "messages",
+                ":messageId",
+                "report"
+              ],
+              "variable": [
+                {
+                  "key": "messageId",
+                  "value": "{{messageId}}"
+                }
+              ]
+            },
+            "description": "Report a message",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"SPAM\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', function () { pm.response.to.have.status(201); });",
+                  "pm.test('answers JSON', function () { pm.response.to.be.json; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /social/chat/report-reasons — Reasons a report can give",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/social/chat/report-reasons",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "report-reasons"
+              ]
+            },
+            "description": "Edited by the admin; use the `code` in the report body."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () { pm.response.to.have.status(200); });",
+                  "pm.test('answers JSON', function () { pm.response.to.be.json; });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "5. Chat — staff",
+      "item": [
+        {
+          "name": "POST /social/chat/staff/warn — Warn a user (chat staff)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-orebit-csrf",
+                "value": "{{csrfToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/social/chat/staff/warn",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "staff",
+                "warn"
+              ]
+            },
+            "description": "Moderators and above. Cannot act on a user of equal or higher rank.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userId\": \"0192f6a0-0000-7000-8000-00000000bb01\",\n  \"roomId\": \"global\",\n  \"reason\": \"Please keep it civil\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', function () { pm.response.to.have.status(201); });",
+                  "pm.test('answers JSON', function () { pm.response.to.be.json; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /social/chat/staff/ban — Ban a user (chat staff)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-orebit-csrf",
+                "value": "{{csrfToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/social/chat/staff/ban",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "staff",
+                "ban"
+              ]
+            },
+            "description": "Give `durationHours` (1 to the setting `limits.maxBanHours`) or `permanent: true`. The end time is set by the database clock.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userId\": \"0192f6a0-0000-7000-8000-00000000bb01\",\n  \"roomId\": \"global\",\n  \"reason\": \"Spam\",\n  \"durationHours\": 2\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', function () { pm.response.to.have.status(201); });",
+                  "pm.test('answers JSON', function () { pm.response.to.be.json; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /social/chat/messages/{messageId}/pin — Pin a message (chat staff)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-orebit-csrf",
+                "value": "{{csrfToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/social/chat/messages/:messageId/pin",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "messages",
+                ":messageId",
+                "pin"
+              ],
+              "variable": [
+                {
+                  "key": "messageId",
+                  "value": "{{messageId}}"
+                }
+              ]
+            },
+            "description": "Pin a message (chat staff)",
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', function () { pm.response.to.have.status(201); });",
+                  "pm.test('answers JSON', function () { pm.response.to.be.json; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /social/chat/messages/{messageId}/unpin — Unpin a message (chat staff)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-orebit-csrf",
+                "value": "{{csrfToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/social/chat/messages/:messageId/unpin",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "messages",
+                ":messageId",
+                "unpin"
+              ],
+              "variable": [
+                {
+                  "key": "messageId",
+                  "value": "{{messageId}}"
+                }
+              ]
+            },
+            "description": "Unpin a message (chat staff)",
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', function () { pm.response.to.have.status(201); });",
+                  "pm.test('answers JSON', function () { pm.response.to.be.json; });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "6. Chat — media",
+      "item": [
+        {
+          "name": "POST /social/chat/upload — Upload one image",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-orebit-csrf",
+                "value": "{{csrfToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/social/chat/upload",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "upload"
+              ],
+              "query": [
+                {
+                  "key": "roomId",
+                  "value": "",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Multipart form with one `file` field. Types and size come from the chat settings (`uploads`). Pass `?roomId=` so a room that does not allow images refuses it before anything is stored. Answers the chat media URL to put in `mediaUrl`.",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": []
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', function () { pm.response.to.have.status(201); });",
+                  "pm.test('answers JSON', function () { pm.response.to.be.json; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /social/chat/media/{mediaId} — An uploaded file, by its signed link",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/social/chat/media/:mediaId?exp=&sig=",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "media",
+                ":mediaId"
+              ],
+              "variable": [
+                {
+                  "key": "mediaId",
+                  "value": "{{mediaId}}"
+                }
+              ],
+              "query": [
+                {
+                  "key": "exp",
+                  "value": "",
+                  "disabled": false
+                },
+                {
+                  "key": "sig",
+                  "value": "",
+                  "disabled": false
+                }
+              ]
+            },
+            "description": "Public: no session cookie. Valid only with the `exp` and `sig` of a link chat handed out with a message you may view. Served with its stored type, `nosniff`; `410` when an admin removed it.\n\nPaste a full signed link (with `exp` and `sig`) from a message into the URL to try it."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "7. Chat — staff tools (Module 4)",
+      "item": [
+        {
+          "name": "GET /social/chat/staff/permissions — My role and permissions",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/social/chat/staff/permissions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "staff",
+                "permissions"
+              ]
+            },
+            "description": "The signed-in staff member's role, each permission with ACT / REPORT / NONE, the ban maximum, penalty scope, history days, pin and rules rooms, restrictable commands and the roles they may give."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () { pm.response.to.have.status(200); });",
+                  "pm.test('answers JSON', function () { pm.response.to.be.json; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /social/chat/staff/restrict — Restrict a user or a group",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-orebit-csrf",
+                "value": "{{csrfToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/social/chat/staff/restrict",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "staff",
+                "restrict"
+              ]
+            },
+            "description": "Chat SETTINGS \"Restrict a Specific User / Group of Users\": MUTE, RESTRICT_MEDIA / EMOJI / GIF / COMMANDS / ADS / DM / GIFTS / RECEIVE_GIFTS, chat-wide or in one room, for a time or until lifted. Groups (PREMIUM, KYC, LEVEL) need the role's group privilege. In REPORT mode the answer is `{ requested: true, requestId, permission }`: a higher role (or an admin) decides.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"targetType\": \"USER\",\n  \"targetValue\": \"0192f6a0-0000-7000-8000-00000000bb01\",\n  \"kind\": \"RESTRICT_COMMANDS\",\n  \"commands\": [\n    \"ad\",\n    \"send\"\n  ],\n  \"reason\": \"Ad spam\",\n  \"durationHours\": 24,\n  \"note\": \"Repeated ad spam today\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', function () { pm.response.to.have.status(201); });",
+                  "pm.test('answers JSON', function () { pm.response.to.be.json; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /social/chat/staff/restrictions/{restrictionId}/lift — Lift a restriction",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-orebit-csrf",
+                "value": "{{csrfToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/social/chat/staff/restrictions/{{restrictionId}}/lift",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "staff",
+                "restrictions",
+                "{{restrictionId}}",
+                "lift"
+              ]
+            },
+            "description": "\"Change / Remove Penalties … by other Moderation Team\", within the role's penalty scope. In REPORT mode the answer is `{ requested: true, requestId, permission }`: a higher role (or an admin) decides.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"note\": \"Apologised\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', function () { pm.response.to.have.status(201); });",
+                  "pm.test('answers JSON', function () { pm.response.to.be.json; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /social/chat/staff/bans/{banId}/lift — Lift a ban",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-orebit-csrf",
+                "value": "{{csrfToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/social/chat/staff/bans/{{banId}}/lift",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "staff",
+                "bans",
+                "{{banId}}",
+                "lift"
+              ]
+            },
+            "description": "Within the role's penalty scope; admin-panel bans stay the panel's. In REPORT mode the answer is `{ requested: true, requestId, permission }`: a higher role (or an admin) decides.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"note\": \"Appeal accepted\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', function () { pm.response.to.have.status(201); });",
+                  "pm.test('answers JSON', function () { pm.response.to.be.json; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /social/chat/staff/restrictions/{restrictionId}/change — Change a restriction",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-orebit-csrf",
+                "value": "{{csrfToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/social/chat/staff/restrictions/{{restrictionId}}/change",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "staff",
+                "restrictions",
+                "{{restrictionId}}",
+                "change"
+              ]
+            },
+            "description": "\"Check Chat Banned / Penalised Users List: Edit\": a new end counted from now (`durationHours`, absent or null = until lifted) and optionally a new reason, within the role's penalty scope. In REPORT mode the answer is `{ requested: true, requestId, permission }`: a higher role (or an admin) decides.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"durationHours\": 6,\n  \"reason\": \"Shortened after appeal\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', function () { pm.response.to.have.status(201); });",
+                  "pm.test('answers JSON', function () { pm.response.to.be.json; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /social/chat/staff/bans/{banId}/change — Change a ban",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-orebit-csrf",
+                "value": "{{csrfToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/social/chat/staff/bans/{{banId}}/change",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "staff",
+                "bans",
+                "{{banId}}",
+                "change"
+              ]
+            },
+            "description": "A new end counted from now (`durationHours`, at most the role's ban maximum) or `permanent: true` (chat admins only), and optionally a new reason. In REPORT mode the answer is `{ requested: true, requestId, permission }`: a higher role (or an admin) decides.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"durationHours\": 12,\n  \"reason\": \"Second offence\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', function () { pm.response.to.have.status(201); });",
+                  "pm.test('answers JSON', function () { pm.response.to.be.json; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /social/chat/staff/users/{userId}/stats — A user's chat stats",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/social/chat/staff/users/{{userId}}/stats",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "staff",
+                "users",
+                "{{userId}}",
+                "stats"
+              ]
+            },
+            "description": "\"See User Stats [even if they are private]\": messages, warnings, bans, reports, restrictions, gifts and ads — only the stats the role's `visibleStats` lists."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () { pm.response.to.have.status(200); });",
+                  "pm.test('answers JSON', function () { pm.response.to.be.json; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /social/chat/staff/users/{userId}/bot-log — A user's bot log",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/social/chat/staff/users/{{userId}}/bot-log",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "staff",
+                "users",
+                "{{userId}}",
+                "bot-log"
+              ]
+            },
+            "description": "\"Check Bot Log of a User\": what automatic moderation did to them, newest first, within the role's history days."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () { pm.response.to.have.status(200); });",
+                  "pm.test('answers JSON', function () { pm.response.to.be.json; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /social/chat/staff/users/{userId}/history — A user's history in other features",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/social/chat/staff/users/{{userId}}/history",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "staff",
+                "users",
+                "{{userId}}",
+                "history"
+              ]
+            },
+            "description": "\"View User History\": the user's activity in other platform features (Faucet, SL…), only the features the chat role may see (empty = all features) and only the role's last x days. Answers `feature_unavailable` until a feature module provides the history."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () { pm.response.to.have.status(200); });",
+                  "pm.test('answers JSON', function () { pm.response.to.be.json; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /social/chat/staff/penalties — Penalised and banned users",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/social/chat/staff/penalties",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "staff",
+                "penalties"
+              ]
+            },
+            "description": "\"See Penalised / Banned Users List\": live bans (paged by `before`) and live restrictions."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () { pm.response.to.have.status(200); });",
+                  "pm.test('answers JSON', function () { pm.response.to.be.json; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /social/chat/staff/reports — Reported messages",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/social/chat/staff/reports",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "staff",
+                "reports"
+              ]
+            },
+            "description": "\"See Reported Messages\" — public and DM messages. A retracted message's text only with \"See Deleted Messages\"."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () { pm.response.to.have.status(200); });",
+                  "pm.test('answers JSON', function () { pm.response.to.be.json; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /social/chat/staff/reports/{reportId}/action — Act on a report",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-orebit-csrf",
+                "value": "{{csrfToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/social/chat/staff/reports/{{reportId}}/action",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "staff",
+                "reports",
+                "{{reportId}}",
+                "action"
+              ]
+            },
+            "description": "\"Take Action on Reported Messages\": DISMISS, WARN, BAN or RETRACT_MESSAGE, each also needing its own permission; a REPORT-mode action leaves the report open.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"BAN\",\n  \"durationHours\": 24,\n  \"note\": \"Scam links\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', function () { pm.response.to.have.status(201); });",
+                  "pm.test('answers JSON', function () { pm.response.to.be.json; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /social/chat/staff/users/{userId}/messages — A user's recent messages",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/social/chat/staff/users/{{userId}}/messages",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "staff",
+                "users",
+                "{{userId}}",
+                "messages"
+              ]
+            },
+            "description": "\"Sort and See all recent messages of a single user\" within the role's history days; retracted messages included."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () { pm.response.to.have.status(200); });",
+                  "pm.test('answers JSON', function () { pm.response.to.be.json; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /social/chat/staff/users/{userId}/tags — Messages where a user is tagged",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/social/chat/staff/users/{{userId}}/tags",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "staff",
+                "users",
+                "{{userId}}",
+                "tags"
+              ]
+            },
+            "description": "\"See all tags of a user\" within the role's history days."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () { pm.response.to.have.status(200); });",
+                  "pm.test('answers JSON', function () { pm.response.to.be.json; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /social/chat/staff/rooms/{roomId}/history — A room's full history",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/social/chat/staff/rooms/{{roomId}}/history",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "staff",
+                "rooms",
+                "{{roomId}}",
+                "history"
+              ]
+            },
+            "description": "\"See Previous Chat (chat history)\" within the role's history days, retracted messages included."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () { pm.response.to.have.status(200); });",
+                  "pm.test('answers JSON', function () { pm.response.to.be.json; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /social/chat/staff/rooms/{roomId}/status — Turn a room on, off or into maintenance",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-orebit-csrf",
+                "value": "{{csrfToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/social/chat/staff/rooms/{{roomId}}/status",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "staff",
+                "rooms",
+                "{{roomId}}",
+                "status"
+              ]
+            },
+            "description": "\"Disable / Enable Chat Rooms\". In REPORT mode the answer is `{ requested: true, requestId, permission }`: a higher role (or an admin) decides.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"MAINTENANCE\",\n  \"note\": \"Back in 10 minutes\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', function () { pm.response.to.have.status(201); });",
+                  "pm.test('answers JSON', function () { pm.response.to.be.json; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /social/chat/staff/rooms/{roomId}/rules — Edit a room's rules",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-orebit-csrf",
+                "value": "{{csrfToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/social/chat/staff/rooms/{{roomId}}/rules",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "staff",
+                "rooms",
+                "{{roomId}}",
+                "rules"
+              ]
+            },
+            "description": "\"Edit Chat Rules (Text)\" for the rooms the role covers. In REPORT mode the answer is `{ requested: true, requestId, permission }`: a higher role (or an admin) decides.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"rules\": [\n    \"Be kind\",\n    \"No spam\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', function () { pm.response.to.have.status(201); });",
+                  "pm.test('answers JSON', function () { pm.response.to.be.json; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /social/chat/staff/rooms/{roomId}/access — Add, remove or restore a user's room access",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-orebit-csrf",
+                "value": "{{csrfToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/social/chat/staff/rooms/{{roomId}}/access",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "staff",
+                "rooms",
+                "{{roomId}}",
+                "access"
+              ]
+            },
+            "description": "\"Change chat Room access for user (Remove / Add user from specific rooms)\": ADD lets the user in whatever the room's gates say, REMOVE shuts them out, RESTORE undoes either. In REPORT mode the answer is `{ requested: true, requestId, permission }`: a higher role (or an admin) decides.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userId\": \"0192f6a0-0000-7000-8000-00000000bb01\",\n  \"action\": \"REMOVE\",\n  \"note\": \"Trolling here\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', function () { pm.response.to.have.status(201); });",
+                  "pm.test('answers JSON', function () { pm.response.to.be.json; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /social/chat/staff/commands — Switch commands off chat-wide",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-orebit-csrf",
+                "value": "{{csrfToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/social/chat/staff/commands",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "staff",
+                "commands"
+              ]
+            },
+            "description": "\"Disable Specific Commands from chat\" / \"Disable All Commands from chat\". In REPORT mode the answer is `{ requested: true, requestId, permission }`: a higher role (or an admin) decides.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"enabled\": true,\n  \"disabled\": [\n    \"ad\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', function () { pm.response.to.have.status(201); });",
+                  "pm.test('answers JSON', function () { pm.response.to.be.json; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /social/chat/staff/gifts — Switch sending money on or off",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-orebit-csrf",
+                "value": "{{csrfToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/social/chat/staff/gifts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "staff",
+                "gifts"
+              ]
+            },
+            "description": "\"Disable / Enable Sending Money from Chat\", for everyone. In REPORT mode the answer is `{ requested: true, requestId, permission }`: a higher role (or an admin) decides.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"enabled\": false,\n  \"note\": \"Payment provider incident\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', function () { pm.response.to.have.status(201); });",
+                  "pm.test('answers JSON', function () { pm.response.to.be.json; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /social/chat/staff/requests — Staff requests",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/social/chat/staff/requests",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "staff",
+                "requests"
+              ]
+            },
+            "description": "`TO_RESOLVE` (default): pending requests of lower roles this member may resolve. `MINE`: their own."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () { pm.response.to.have.status(200); });",
+                  "pm.test('answers JSON', function () { pm.response.to.be.json; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /social/chat/staff/requests/{requestId}/resolve — Approve or reject a request",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-orebit-csrf",
+                "value": "{{csrfToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/social/chat/staff/requests/{{requestId}}/resolve",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "staff",
+                "requests",
+                "{{requestId}}",
+                "resolve"
+              ]
+            },
+            "description": "Approving carries the action out as the approver, with their own permissions and limits; the requester gets a notice.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"approve\": true,\n  \"note\": \"Done\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', function () { pm.response.to.have.status(201); });",
+                  "pm.test('answers JSON', function () { pm.response.to.be.json; });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "8. Chat — commands, mute and block (Module 5)",
+      "item": [
+        {
+          "name": "POST /social/chat/commands — Run a chat command",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-orebit-csrf",
+                "value": "{{csrfToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/social/chat/commands",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "commands"
+              ]
+            },
+            "description": "The same commands as typing them in `send_message`: /help, /dm (/pm), /mute, /unmute, /mutelist, /block, /unblock, /blocklist, /send (/gift), /ad. Checked chat-wide, per room (`allowCommands` and its list) and against RESTRICT_COMMANDS.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"roomId\": \"global\",\n  \"text\": \"/mute @bob\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', function () { pm.response.to.have.status(201); });",
+                  "pm.test('answers JSON', function () { pm.response.to.be.json; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /social/chat/users/{userId}/mute — Mute a user",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-orebit-csrf",
+                "value": "{{csrfToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/social/chat/users/{{userId}}/mute",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "users",
+                "{{userId}}",
+                "mute"
+              ]
+            },
+            "description": "/mute: their public messages are hidden from you; DMs still work."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', function () { pm.response.to.have.status(201); });",
+                  "pm.test('answers JSON', function () { pm.response.to.be.json; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /social/chat/users/{userId}/unmute — Unmute a user",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-orebit-csrf",
+                "value": "{{csrfToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/social/chat/users/{{userId}}/unmute",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "users",
+                "{{userId}}",
+                "unmute"
+              ]
+            },
+            "description": "/unmute."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', function () { pm.response.to.have.status(201); });",
+                  "pm.test('answers JSON', function () { pm.response.to.be.json; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /social/chat/users/{userId}/block — Block a user",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-orebit-csrf",
+                "value": "{{csrfToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/social/chat/users/{{userId}}/block",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "users",
+                "{{userId}}",
+                "block"
+              ]
+            },
+            "description": "/block: their public messages are hidden from you; neither can DM or gift the other; they cannot open your profile."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', function () { pm.response.to.have.status(201); });",
+                  "pm.test('answers JSON', function () { pm.response.to.be.json; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /social/chat/users/{userId}/unblock — Unblock a user",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-orebit-csrf",
+                "value": "{{csrfToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/social/chat/users/{{userId}}/unblock",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "users",
+                "{{userId}}",
+                "unblock"
+              ]
+            },
+            "description": "/unblock."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', function () { pm.response.to.have.status(201); });",
+                  "pm.test('answers JSON', function () { pm.response.to.be.json; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /social/chat/mutes — Muted users",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/social/chat/mutes",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "mutes"
+              ]
+            },
+            "description": "/mutelist, newest first."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () { pm.response.to.have.status(200); });",
+                  "pm.test('answers JSON', function () { pm.response.to.be.json; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /social/chat/blocks — Blocked users",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/social/chat/blocks",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "blocks"
+              ]
+            },
+            "description": "/blocklist, newest first."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () { pm.response.to.have.status(200); });",
+                  "pm.test('answers JSON', function () { pm.response.to.be.json; });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "9. Chat — ads (Module 5)",
+      "item": [
+        {
+          "name": "GET /social/chat/ads/options — What an ad can have",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/social/chat/ads/options",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "ads",
+                "options"
+              ]
+            },
+            "description": "For the ad composer: ads on or off, the badges and skins to choose from (with the skin price), length, link, pinned and repeat limits and the base price."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () { pm.response.to.have.status(200); });",
+                  "pm.test('answers JSON', function () { pm.response.to.be.json; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /social/chat/ads/quote — Price an ad",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-orebit-csrf",
+                "value": "{{csrfToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/social/chat/ads/quote",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "ads",
+                "quote"
+              ]
+            },
+            "description": "Validates the ad against the `ads` settings and prices it (base, rooms, links, repeats with discount, pinned minutes) without storing anything.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"content\": \"Visit orebit.io/shop today\",\n  \"roomIds\": [\n    \"global\"\n  ],\n  \"pinMinutes\": 10,\n  \"repeatCount\": 2,\n  \"repeatGapMinutes\": 15,\n  \"badgeId\": \"love\",\n  \"hiddenCountries\": [\n    \"US\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', function () { pm.response.to.have.status(201); });",
+                  "pm.test('answers JSON', function () { pm.response.to.be.json; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /social/chat/ads — Post an ad",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-orebit-csrf",
+                "value": "{{csrfToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/social/chat/ads",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "ads"
+              ]
+            },
+            "description": "Pays through the payment module, posts an AD message into each room (never hidden by mute or block, shown to promo-only viewers), queues pinned slots and schedules repeats.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"content\": \"Visit orebit.io/shop today\",\n  \"roomIds\": [\n    \"global\"\n  ],\n  \"pinMinutes\": 10,\n  \"repeatCount\": 2,\n  \"repeatGapMinutes\": 15\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', function () { pm.response.to.have.status(201); });",
+                  "pm.test('answers JSON', function () { pm.response.to.be.json; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /social/chat/ads/mine — My ads",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/social/chat/ads/mine",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "ads",
+                "mine"
+              ]
+            },
+            "description": "With price breakdown, posts made, next repeat and refunds."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () { pm.response.to.have.status(200); });",
+                  "pm.test('answers JSON', function () { pm.response.to.be.json; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /social/chat/ads — The advertisement tab",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/social/chat/ads",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "ads"
+              ]
+            },
+            "description": "\"Separate Advertisement Tab\": running ads the viewer's country may see."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () { pm.response.to.have.status(200); });",
+                  "pm.test('answers JSON', function () { pm.response.to.be.json; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /social/chat/ads/{adId}/cancel — Cancel my ad",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-orebit-csrf",
+                "value": "{{csrfToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/social/chat/ads/{{adId}}/cancel",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "ads",
+                "{{adId}}",
+                "cancel"
+              ]
+            },
+            "description": "Posts not made and pinned minutes not shown are refunded."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', function () { pm.response.to.have.status(201); });",
+                  "pm.test('answers JSON', function () { pm.response.to.be.json; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /social/chat/rooms/{roomId}/pinned-ad — The pinned ad of a room",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/social/chat/rooms/{{roomId}}/pinned-ad",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "rooms",
+                "{{roomId}}",
+                "pinned-ad"
+              ]
+            },
+            "description": "The ad pinned on top of the room now, if any (also sent as `ad_pinned` / `ad_unpinned` and with every join)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () { pm.response.to.have.status(200); });",
+                  "pm.test('answers JSON', function () { pm.response.to.be.json; });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "10. Chat — gifts (Module 5)",
+      "item": [
+        {
+          "name": "GET /social/chat/gifts/options — What a gift can be",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/social/chat/gifts/options",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "gifts",
+                "options"
+              ]
+            },
+            "description": "For the gift form: sending money on or off, the USD limits, the per-currency limits and which code is asked (PAYMENT_PIN or TWO_FA)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () { pm.response.to.have.status(200); });",
+                  "pm.test('answers JSON', function () { pm.response.to.be.json; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /social/chat/gifts — Start a gift",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-orebit-csrf",
+                "value": "{{csrfToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/social/chat/gifts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "gifts"
+              ]
+            },
+            "description": "/send or /gift: checks, quote and limits, then waits for the payment PIN or 2FA (`verification`). Confirm within 10 minutes.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"recipient\": \"bob\",\n  \"amount\": \"10.5\",\n  \"currency\": \"USDT\",\n  \"roomId\": \"global\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', function () { pm.response.to.have.status(201); });",
+                  "pm.test('answers JSON', function () { pm.response.to.be.json; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /social/chat/gifts/{giftId}/confirm — Confirm a gift",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-orebit-csrf",
+                "value": "{{csrfToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/social/chat/gifts/{{giftId}}/confirm",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "gifts",
+                "{{giftId}}",
+                "confirm"
+              ]
+            },
+            "description": "The code, then the transfer, then the notice in the room or conversation; the recipient gets `gift_received`.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"123456\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', function () { pm.response.to.have.status(201); });",
+                  "pm.test('answers JSON', function () { pm.response.to.be.json; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /social/chat/gifts/{giftId}/cancel — Cancel a gift waiting for its code",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-orebit-csrf",
+                "value": "{{csrfToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/social/chat/gifts/{{giftId}}/cancel",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "gifts",
+                "{{giftId}}",
+                "cancel"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', function () { pm.response.to.have.status(201); });",
+                  "pm.test('answers JSON', function () { pm.response.to.be.json; });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "11. Chat — direct messages (Module 8)",
+      "item": [
+        {
+          "name": "GET /social/chat/dm/conversations — An inbox tab",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/social/chat/dm/conversations",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "dm",
+                "conversations"
+              ]
+            },
+            "description": "PRIMARY (default), GENERAL, GROUPS, CHANNELS (the public groups: \"Channels: All Public Groups\") or REQUESTS; pinned people first on the first page, then by last activity. Online / last seen follow each user's privacy."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () { pm.response.to.have.status(200); });",
+                  "pm.test('answers JSON', function () { pm.response.to.be.json; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /social/chat/dm/conversations — Open a direct conversation",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-orebit-csrf",
+                "value": "{{csrfToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/social/chat/dm/conversations",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "dm",
+                "conversations"
+              ]
+            },
+            "description": "Finds or creates the one conversation with this user; folders follow \"Auto Assign Folders\"; a stranger gets a message request. Counts toward the new-DM limit.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userId\": \"bob\",\n  \"content\": \"Hi Bob!\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', function () { pm.response.to.have.status(201); });",
+                  "pm.test('answers JSON', function () { pm.response.to.be.json; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /social/chat/dm/unread — Unread badges",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/social/chat/dm/unread",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "dm",
+                "unread"
+              ]
+            },
+            "description": "Conversations with unread messages per folder (channels are the public groups among groups), and pending requests."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () { pm.response.to.have.status(200); });",
+                  "pm.test('answers JSON', function () { pm.response.to.be.json; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /social/chat/dm/merchant-apps — Merchant folder by app",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/social/chat/dm/merchant-apps",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "dm",
+                "merchant-apps"
+              ]
+            },
+            "description": "Chat MAIN \"SO / Merchants: … sorted separately by apps\": the merchant folder's conversations and unread per app (appId null = no app). List one app with GET /social/chat/dm/conversations?folder=MERCHANT&appId=…"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () { pm.response.to.have.status(200); });",
+                  "pm.test('answers JSON', function () { pm.response.to.be.json; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /social/chat/dm/conversations/{conversationId} — One conversation",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/social/chat/dm/conversations/{{conversationId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "dm",
+                "conversations",
+                "{{conversationId}}"
+              ]
+            },
+            "description": "My settings in it, its members (with read positions and presence) and the group."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () { pm.response.to.have.status(200); });",
+                  "pm.test('answers JSON', function () { pm.response.to.be.json; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /social/chat/dm/conversations/{conversationId}/messages — Conversation history",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/social/chat/dm/conversations/{{conversationId}}/messages",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "dm",
+                "conversations",
+                "{{conversationId}}",
+                "messages"
+              ]
+            },
+            "description": "Newest first; group members see the group from when they joined."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () { pm.response.to.have.status(200); });",
+                  "pm.test('answers JSON', function () { pm.response.to.be.json; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /social/chat/dm/conversations/{conversationId}/messages — Send a message",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-orebit-csrf",
+                "value": "{{csrfToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/social/chat/dm/conversations/{{conversationId}}/messages",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "dm",
+                "conversations",
+                "{{conversationId}}",
+                "messages"
+              ]
+            },
+            "description": "Text or media (with caption). Links only between friends; groups follow \"members can text\" and timeouts.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"content\": \"See you at 8\",\n  \"clientMessageId\": \"0192f6a0-0000-7000-8000-00000000cc01\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', function () { pm.response.to.have.status(201); });",
+                  "pm.test('answers JSON', function () { pm.response.to.be.json; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /social/chat/dm/conversations/{conversationId}/read — Mark read",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-orebit-csrf",
+                "value": "{{csrfToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/social/chat/dm/conversations/{{conversationId}}/read",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "dm",
+                "conversations",
+                "{{conversationId}}",
+                "read"
+              ]
+            },
+            "description": "Read receipts: the position only moves forward; the others get `dm_read`.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"messageId\": \"0192f6a0-0000-7000-8000-00000000cc01\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', function () { pm.response.to.have.status(201); });",
+                  "pm.test('answers JSON', function () { pm.response.to.be.json; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /social/chat/dm/conversations/{conversationId}/accept — Accept a message request",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-orebit-csrf",
+                "value": "{{csrfToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/social/chat/dm/conversations/{{conversationId}}/accept",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "dm",
+                "conversations",
+                "{{conversationId}}",
+                "accept"
+              ]
+            },
+            "description": "The conversation moves to General."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', function () { pm.response.to.have.status(201); });",
+                  "pm.test('answers JSON', function () { pm.response.to.be.json; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /social/chat/dm/conversations/{conversationId}/decline — Decline a message request",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-orebit-csrf",
+                "value": "{{csrfToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/social/chat/dm/conversations/{{conversationId}}/decline",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "dm",
+                "conversations",
+                "{{conversationId}}",
+                "decline"
+              ]
+            },
+            "description": "Hidden from the inbox; the sender is not told."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', function () { pm.response.to.have.status(201); });",
+                  "pm.test('answers JSON', function () { pm.response.to.be.json; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /social/chat/dm/conversations/{conversationId}/folder — Move to Primary or General",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-orebit-csrf",
+                "value": "{{csrfToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/social/chat/dm/conversations/{{conversationId}}/folder",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "dm",
+                "conversations",
+                "{{conversationId}}",
+                "folder"
+              ]
+            },
+            "description": "\"User can switch friends onto general or primary\".",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"folder\": \"PRIMARY\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', function () { pm.response.to.have.status(201); });",
+                  "pm.test('answers JSON', function () { pm.response.to.be.json; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /social/chat/dm/conversations/{conversationId}/pin — Pin or unpin a person",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-orebit-csrf",
+                "value": "{{csrfToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/social/chat/dm/conversations/{{conversationId}}/pin",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "dm",
+                "conversations",
+                "{{conversationId}}",
+                "pin"
+              ]
+            },
+            "description": "At most \"Maximum Number of Pinned People\" per folder.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"pinned\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', function () { pm.response.to.have.status(201); });",
+                  "pm.test('answers JSON', function () { pm.response.to.be.json; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /social/chat/dm/conversations/{conversationId}/nickname — Set a nickname",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-orebit-csrf",
+                "value": "{{csrfToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/social/chat/dm/conversations/{{conversationId}}/nickname",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "dm",
+                "conversations",
+                "{{conversationId}}",
+                "nickname"
+              ]
+            },
+            "description": "Friends only; `null` removes it.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nickname\": \"Bobby\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', function () { pm.response.to.have.status(201); });",
+                  "pm.test('answers JSON', function () { pm.response.to.be.json; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /social/chat/dm/conversations/{conversationId}/notifications — Notifications for this conversation",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-orebit-csrf",
+                "value": "{{csrfToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/social/chat/dm/conversations/{{conversationId}}/notifications",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "dm",
+                "conversations",
+                "{{conversationId}}",
+                "notifications"
+              ]
+            },
+            "description": "\"Inbox wise\": DEFAULT follows the folder setting.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"notifications\": \"OFF\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', function () { pm.response.to.have.status(201); });",
+                  "pm.test('answers JSON', function () { pm.response.to.be.json; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /social/chat/dm/conversations/{conversationId}/pinned — Pinned messages",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/social/chat/dm/conversations/{{conversationId}}/pinned",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "dm",
+                "conversations",
+                "{{conversationId}}",
+                "pinned"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () { pm.response.to.have.status(200); });",
+                  "pm.test('answers JSON', function () { pm.response.to.be.json; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /social/chat/dm/conversations/{conversationId}/shared — Shared media or links",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/social/chat/dm/conversations/{{conversationId}}/shared",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "dm",
+                "conversations",
+                "{{conversationId}}",
+                "shared"
+              ]
+            },
+            "description": "\"see all the shared links and media (photos and videos)\"."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () { pm.response.to.have.status(200); });",
+                  "pm.test('answers JSON', function () { pm.response.to.be.json; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /social/chat/dm/conversations/{conversationId}/members — Members of a group, one page",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/social/chat/dm/conversations/{{conversationId}}/members",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "dm",
+                "conversations",
+                "{{conversationId}}",
+                "members"
+              ]
+            },
+            "description": "One page of a group's members (default 50, at most 100, `nextCursor`)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () { pm.response.to.have.status(200); });",
+                  "pm.test('answers JSON', function () { pm.response.to.be.json; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /social/chat/dm/conversations/{conversationId}/gift — The gift button",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-orebit-csrf",
+                "value": "{{csrfToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/social/chat/dm/conversations/{{conversationId}}/gift",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "dm",
+                "conversations",
+                "{{conversationId}}",
+                "gift"
+              ]
+            },
+            "description": "Starts a gift to the other member; confirm with POST /social/chat/gifts/{giftId}/confirm.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": \"5\",\n  \"currency\": \"USDT\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', function () { pm.response.to.have.status(201); });",
+                  "pm.test('answers JSON', function () { pm.response.to.be.json; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /social/chat/dm/conversations/{conversationId}/gift-card — Send a gift card",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-orebit-csrf",
+                "value": "{{csrfToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/social/chat/dm/conversations/{{conversationId}}/gift-card",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "dm",
+                "conversations",
+                "{{conversationId}}",
+                "gift-card"
+              ]
+            },
+            "description": "A gift card for the other person of an accepted direct conversation (V2-99): title and value, never the code.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"couponId\": \"card-123\",\n  \"clientMessageId\": \"0192f3a1-0000-7000-8000-000000000001\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', function () { pm.response.to.have.status(201); });",
+                  "pm.test('answers JSON', function () { pm.response.to.be.json; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /social/chat/dm/messages/{messageId}/retract — Retract my message",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-orebit-csrf",
+                "value": "{{csrfToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/social/chat/dm/messages/{{dmMessageId}}/retract",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "dm",
+                "messages",
+                "{{dmMessageId}}",
+                "retract"
+              ]
+            },
+            "description": "Others see that it was retracted; admins still see the text."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', function () { pm.response.to.have.status(201); });",
+                  "pm.test('answers JSON', function () { pm.response.to.be.json; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /social/chat/dm/messages/{messageId}/pin — Pin or unpin a message",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-orebit-csrf",
+                "value": "{{csrfToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/social/chat/dm/messages/{{dmMessageId}}/pin",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "dm",
+                "messages",
+                "{{dmMessageId}}",
+                "pin"
+              ]
+            },
+            "description": "Either member of a direct conversation; sub-admins and above in a group. At most \"Maximum Number of Pinned Messages (per DM)\".",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"pinned\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', function () { pm.response.to.have.status(201); });",
+                  "pm.test('answers JSON', function () { pm.response.to.be.json; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /social/chat/dm/messages/{messageId}/forward — Forward a message",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-orebit-csrf",
+                "value": "{{csrfToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/social/chat/dm/messages/{{dmMessageId}}/forward",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "dm",
+                "messages",
+                "{{dmMessageId}}",
+                "forward"
+              ]
+            },
+            "description": "Into up to 10 conversations, marked \"Forwarded\".",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"conversationIds\": [\n    \"0192f6a0-0000-7000-8000-00000000cc01\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', function () { pm.response.to.have.status(201); });",
+                  "pm.test('answers JSON', function () { pm.response.to.be.json; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /social/chat/dm/messages/{messageId}/report — Report a message",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-orebit-csrf",
+                "value": "{{csrfToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/social/chat/dm/messages/{{dmMessageId}}/report",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "dm",
+                "messages",
+                "{{dmMessageId}}",
+                "report"
+              ]
+            },
+            "description": "Shows in the staff and admin report queues.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"SPAM\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', function () { pm.response.to.have.status(201); });",
+                  "pm.test('answers JSON', function () { pm.response.to.be.json; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /social/chat/dm/search — Search my conversations",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/social/chat/dm/search?q=hello",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "dm",
+                "search"
+              ],
+              "query": [
+                {
+                  "key": "q",
+                  "value": "hello"
+                }
+              ]
+            },
+            "description": "\"Users can also search DMs for specific texts\"."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () { pm.response.to.have.status(200); });",
+                  "pm.test('answers JSON', function () { pm.response.to.be.json; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /social/chat/dm/privacy — My privacy and notification settings",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/social/chat/dm/privacy",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "dm",
+                "privacy"
+              ]
+            },
+            "description": "Last seen and common-groups visibility, folder notifications and quiet mode, over the admin defaults."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () { pm.response.to.have.status(200); });",
+                  "pm.test('answers JSON', function () { pm.response.to.be.json; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "PUT /social/chat/dm/privacy — Change privacy and notification settings",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "x-orebit-csrf",
+                "value": "{{csrfToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/social/chat/dm/privacy",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "dm",
+                "privacy"
+              ]
+            },
+            "description": "Custom quiet-mode times only when the admin allows it.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"lastSeenVisibility\": \"FRIENDS\",\n  \"notifyGroups\": false,\n  \"quietMode\": \"CUSTOM\",\n  \"quietStart\": \"23:00\",\n  \"quietEnd\": \"07:00\",\n  \"typingReceiptsEnabled\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () { pm.response.to.have.status(200); });",
+                  "pm.test('answers JSON', function () { pm.response.to.be.json; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /social/chat/dm/users/{userId}/common-groups — Groups in common",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/social/chat/dm/users/{{userId}}/common-groups",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "dm",
+                "users",
+                "{{userId}}",
+                "common-groups"
+              ]
+            },
+            "description": "As the other user's \"Common Groups … who can see\" allows."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () { pm.response.to.have.status(200); });",
+                  "pm.test('answers JSON', function () { pm.response.to.be.json; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /social/chat/dm/users/{userId} — Find a user to message",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/social/chat/dm/users/{{userId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "dm",
+                "users",
+                "{{userId}}"
+              ]
+            },
+            "description": "Resolves an id, username or login code to the user a conversation can be opened with."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () { pm.response.to.have.status(200); });",
+                  "pm.test('answers JSON', function () { pm.response.to.be.json; });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "12. Chat — groups (Module 9)",
+      "item": [
+        {
+          "name": "POST /social/chat/dm/groups — Create a group",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-orebit-csrf",
+                "value": "{{csrfToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/social/chat/dm/groups",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "dm",
+                "groups"
+              ]
+            },
+            "description": "Public (anyone joins) or private (invite only); \"Maximum Groups a User Can Create\", separate for premium. Invited users get an invite.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Weekend traders\",\n  \"description\": \"Chill chat\",\n  \"visibility\": \"PRIVATE\",\n  \"inviteUserIds\": [\n    \"bob\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', function () { pm.response.to.have.status(201); });",
+                  "pm.test('answers JSON', function () { pm.response.to.be.json; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /social/chat/dm/groups/public — Public groups (Channels)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/social/chat/dm/groups/public?q=hello",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "dm",
+                "groups",
+                "public"
+              ],
+              "query": [
+                {
+                  "key": "q",
+                  "value": "hello"
+                }
+              ]
+            },
+            "description": "\"Channels: All Public Groups\", with a name search."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () { pm.response.to.have.status(200); });",
+                  "pm.test('answers JSON', function () { pm.response.to.be.json; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "PUT /social/chat/dm/groups/{groupId} — Change group details",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "x-orebit-csrf",
+                "value": "{{csrfToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/social/chat/dm/groups/{{groupId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "dm",
+                "groups",
+                "{{groupId}}"
+              ]
+            },
+            "description": "Name, description, logo and type, each behind its group permission; \"members can text\" for admins.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Weekend traders 🌴\",\n  \"membersCanText\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () { pm.response.to.have.status(200); });",
+                  "pm.test('answers JSON', function () { pm.response.to.be.json; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "PUT /social/chat/dm/groups/{groupId}/permissions — Who may do what",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "x-orebit-csrf",
+                "value": "{{csrfToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/social/chat/dm/groups/{{groupId}}/permissions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "dm",
+                "groups",
+                "{{groupId}}",
+                "permissions"
+              ]
+            },
+            "description": "Owner only: the lowest role for each permission, among those the admin lets owners delegate.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"permissions\": {\n    \"ADD_PEOPLE\": \"MEMBER\",\n    \"REMOVE_PEOPLE\": \"ADMIN\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () { pm.response.to.have.status(200); });",
+                  "pm.test('answers JSON', function () { pm.response.to.be.json; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /social/chat/dm/groups/{groupId}/join — Join a group",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-orebit-csrf",
+                "value": "{{csrfToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/social/chat/dm/groups/{{groupId}}/join",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "dm",
+                "groups",
+                "{{groupId}}",
+                "join"
+              ]
+            },
+            "description": "Public groups, or private ones with a pending invite."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', function () { pm.response.to.have.status(201); });",
+                  "pm.test('answers JSON', function () { pm.response.to.be.json; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /social/chat/dm/groups/{groupId}/leave — Leave a group",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-orebit-csrf",
+                "value": "{{csrfToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/social/chat/dm/groups/{{groupId}}/leave",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "dm",
+                "groups",
+                "{{groupId}}",
+                "leave"
+              ]
+            },
+            "description": "An owner transfers ownership first."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', function () { pm.response.to.have.status(201); });",
+                  "pm.test('answers JSON', function () { pm.response.to.be.json; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /social/chat/dm/groups/{groupId}/invites — Invite people",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-orebit-csrf",
+                "value": "{{csrfToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/social/chat/dm/groups/{{groupId}}/invites",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "dm",
+                "groups",
+                "{{groupId}}",
+                "invites"
+              ]
+            },
+            "description": "Needs ADD_PEOPLE; blocked users and banned members are skipped.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userIds\": [\n    \"bob\",\n    \"carol\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', function () { pm.response.to.have.status(201); });",
+                  "pm.test('answers JSON', function () { pm.response.to.be.json; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /social/chat/dm/invites — My pending group invites",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/social/chat/dm/invites",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "dm",
+                "invites"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () { pm.response.to.have.status(200); });",
+                  "pm.test('answers JSON', function () { pm.response.to.be.json; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /social/chat/dm/invites/{inviteId}/answer — Accept or decline an invite",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-orebit-csrf",
+                "value": "{{csrfToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/social/chat/dm/invites/{{inviteId}}/answer",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "dm",
+                "invites",
+                "{{inviteId}}",
+                "answer"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"accept\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', function () { pm.response.to.have.status(201); });",
+                  "pm.test('answers JSON', function () { pm.response.to.be.json; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /social/chat/dm/groups/{groupId}/invites/{inviteId}/revoke — Withdraw a pending invite",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-orebit-csrf",
+                "value": "{{csrfToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/social/chat/dm/groups/{{groupId}}/invites/{{inviteId}}/revoke",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "dm",
+                "groups",
+                "{{groupId}}",
+                "invites",
+                "{{inviteId}}",
+                "revoke"
+              ]
+            },
+            "description": "Withdraws a pending invite (V2-121)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', function () { pm.response.to.have.status(201); });",
+                  "pm.test('answers JSON', function () { pm.response.to.be.json; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /social/chat/dm/groups/{groupId}/members/{userId}/role — Change a member's role",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-orebit-csrf",
+                "value": "{{csrfToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/social/chat/dm/groups/{{groupId}}/members/{{userId}}/role",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "dm",
+                "groups",
+                "{{groupId}}",
+                "members",
+                "{{userId}}",
+                "role"
+              ]
+            },
+            "description": "ADMIN, SUB_ADMIN or MEMBER, below your own; \"Max Group Admins / Sub-Admins\".",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"role\": \"SUB_ADMIN\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', function () { pm.response.to.have.status(201); });",
+                  "pm.test('answers JSON', function () { pm.response.to.be.json; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /social/chat/dm/groups/{groupId}/members/{userId}/remove — Remove a member",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-orebit-csrf",
+                "value": "{{csrfToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/social/chat/dm/groups/{{groupId}}/members/{{userId}}/remove",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "dm",
+                "groups",
+                "{{groupId}}",
+                "members",
+                "{{userId}}",
+                "remove"
+              ]
+            },
+            "description": "Needs REMOVE_PEOPLE."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', function () { pm.response.to.have.status(201); });",
+                  "pm.test('answers JSON', function () { pm.response.to.be.json; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /social/chat/dm/groups/{groupId}/members/{userId}/timeout — Time a member out",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-orebit-csrf",
+                "value": "{{csrfToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/social/chat/dm/groups/{{groupId}}/members/{{userId}}/timeout",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "dm",
+                "groups",
+                "{{groupId}}",
+                "members",
+                "{{userId}}",
+                "timeout"
+              ]
+            },
+            "description": "\"Timeout User (They cannot text)\"; `minutes: null` ends it.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"minutes\": 30\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', function () { pm.response.to.have.status(201); });",
+                  "pm.test('answers JSON', function () { pm.response.to.be.json; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /social/chat/dm/groups/{groupId}/members/{userId}/ban — Ban or unban a member",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-orebit-csrf",
+                "value": "{{csrfToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/social/chat/dm/groups/{{groupId}}/members/{{userId}}/ban",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "dm",
+                "groups",
+                "{{groupId}}",
+                "members",
+                "{{userId}}",
+                "ban"
+              ]
+            },
+            "description": "\"Ban User (for public groups)\".",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"banned\": true,\n  \"reason\": \"Spam\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', function () { pm.response.to.have.status(201); });",
+                  "pm.test('answers JSON', function () { pm.response.to.be.json; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /social/chat/dm/groups/{groupId}/messages/{messageId}/delete — Delete a message for members",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-orebit-csrf",
+                "value": "{{csrfToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/social/chat/dm/groups/{{groupId}}/messages/{{dmMessageId}}/delete",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "dm",
+                "groups",
+                "{{groupId}}",
+                "messages",
+                "{{dmMessageId}}",
+                "delete"
+              ]
+            },
+            "description": "\"Delete Messages (only deleted on user end)\": admins still see it in the panel."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', function () { pm.response.to.have.status(201); });",
+                  "pm.test('answers JSON', function () { pm.response.to.be.json; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /social/chat/dm/groups/{groupId}/transfer — Start an ownership transfer",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-orebit-csrf",
+                "value": "{{csrfToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/social/chat/dm/groups/{{groupId}}/transfer",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "dm",
+                "groups",
+                "{{groupId}}",
+                "transfer"
+              ]
+            },
+            "description": "Owner only. The group changes hands at once; no code is asked (V2-144).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userId\": \"0192f6a0-0000-7000-8000-00000000bb01\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', function () { pm.response.to.have.status(201); });",
+                  "pm.test('answers JSON', function () { pm.response.to.be.json; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /social/chat/dm/groups — My groups",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/social/chat/dm/groups",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "dm",
+                "groups"
+              ]
+            },
+            "description": "The caller's own groups (the GROUPS folder of the inbox), newest activity first."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () { pm.response.to.have.status(200); });",
+                  "pm.test('answers JSON', function () { pm.response.to.be.json; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /social/chat/dm/groups/{groupId} — One group",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/social/chat/dm/groups/{{groupId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "dm",
+                "groups",
+                "{{groupId}}"
+              ]
+            },
+            "description": "The group with my membership, its members (with presence) and its settings."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () { pm.response.to.have.status(200); });",
+                  "pm.test('answers JSON', function () { pm.response.to.be.json; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /social/chat/dm/groups/{groupId}/permissions — Group permissions",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/social/chat/dm/groups/{{groupId}}/permissions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "dm",
+                "groups",
+                "{{groupId}}",
+                "permissions"
+              ]
+            },
+            "description": "\"Settings / Permissions which Group Admins can allow others to set\": who may do what in this group."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () { pm.response.to.have.status(200); });",
+                  "pm.test('answers JSON', function () { pm.response.to.be.json; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /social/chat/dm/groups/{groupId}/bans — Banned members of a public group, one page",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/social/chat/dm/groups/{{groupId}}/bans",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "dm",
+                "groups",
+                "{{groupId}}",
+                "bans"
+              ]
+            },
+            "description": "Paged list of the people banned from a public group."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () { pm.response.to.have.status(200); });",
+                  "pm.test('answers JSON', function () { pm.response.to.be.json; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "PUT /social/chat/dm/groups/{groupId}/members/{userId}/role — Set a member's role",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "x-orebit-csrf",
+                "value": "{{csrfToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/social/chat/dm/groups/{{groupId}}/members/{{userId}}/role",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "dm",
+                "groups",
+                "{{groupId}}",
+                "members",
+                "{{userId}}",
+                "role"
+              ]
+            },
+            "description": "Owner, admin, sub-admin or member, within \"Max Group Admins / Sub-Admins\". Same as the POST form.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"role\": \"ADMIN\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () { pm.response.to.have.status(200); });",
+                  "pm.test('answers JSON', function () { pm.response.to.be.json; });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "13. Chat — support (Module 10)",
+      "item": [
+        {
+          "name": "POST /social/chat/support/tickets — Open a support ticket",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-orebit-csrf",
+                "value": "{{csrfToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/social/chat/support/tickets",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "support",
+                "tickets"
+              ]
+            },
+            "description": "Chat MAIN \"Support Chat\": a new ticket with its first message, PENDING until support answers. A banned user only reads.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"subject\": \"Deposit not credited\",\n  \"content\": \"My deposit from this morning has not arrived.\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', function () { pm.response.to.have.status(201); });",
+                  "pm.test('answers JSON', function () { pm.response.to.be.json; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /social/chat/support/tickets — My support tickets",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/social/chat/support/tickets",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "support",
+                "tickets"
+              ]
+            },
+            "description": "Most recently active first; `status` narrows to one tab."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () { pm.response.to.have.status(200); });",
+                  "pm.test('answers JSON', function () { pm.response.to.be.json; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /social/chat/support/tickets/{ticketId} — One ticket and its messages",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/social/chat/support/tickets/{{ticketId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "support",
+                "tickets",
+                "{{ticketId}}"
+              ]
+            },
+            "description": "The ticket with its conversation, oldest message first; `cursor` pages forward."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () { pm.response.to.have.status(200); });",
+                  "pm.test('answers JSON', function () { pm.response.to.be.json; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /social/chat/support/tickets/{ticketId}/messages — Write to a ticket",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-orebit-csrf",
+                "value": "{{csrfToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/social/chat/support/tickets/{{ticketId}}/messages",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "support",
+                "tickets",
+                "{{ticketId}}",
+                "messages"
+              ]
+            },
+            "description": "A message on a PENDING or OPEN ticket; a CLOSED ticket refuses it (`ticket_closed`).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"content\": \"Here is the transaction id: 0xabc…\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', function () { pm.response.to.have.status(201); });",
+                  "pm.test('answers JSON', function () { pm.response.to.be.json; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /social/chat/support/tickets/{ticketId}/close — Close a ticket",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-orebit-csrf",
+                "value": "{{csrfToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/social/chat/support/tickets/{{ticketId}}/close",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "social",
+                "chat",
+                "support",
+                "tickets",
+                "{{ticketId}}",
+                "close"
+              ]
+            },
+            "description": "The close button. A closed ticket takes no more messages."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', function () { pm.response.to.have.status(201); });",
+                  "pm.test('answers JSON', function () { pm.response.to.be.json; });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "14. Chat — rain (Modules 6–7)",
+      "item": [
+        {
+          "name": "GET /social/rain/state — Rainpool countdown and rain rules",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/social/rain/state",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "social",
+                "rain",
+                "state"
+              ]
+            },
+            "description": "Chat Rainpool Main: the next rain time, when the countdown started, the currency and pot already chosen (in the currency and in USD) for the count-up, each side's ON / OFF / MAINTENANCE status and maintenance text, and the user rain rules (/rain). Public: shown on the dashboard and in chat. Socket: `rain_state`, `rain_config_changed`."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () { pm.response.to.have.status(200); });",
+                  "pm.test('answers JSON', function () { pm.response.to.be.json; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /social/rain/limits — User rain limits of one currency",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/social/rain/limits?currency=BTC",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "social",
+                "rain",
+                "limits"
+              ],
+              "query": [
+                {
+                  "key": "currency",
+                  "value": "BTC"
+                }
+              ]
+            },
+            "description": "Chat SETTINGS \"/rain: Minimum / Maximum Amount\": the limits of `currency` right now, in that currency (converted from USD when set \"Same for all Currencies\"), the fee and the recipient limits."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () { pm.response.to.have.status(200); });",
+                  "pm.test('answers JSON', function () { pm.response.to.be.json; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /social/rain/history — Recent rains",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/social/rain/history?limit=30",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "social",
+                "rain",
+                "history"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "30"
+                }
+              ]
+            },
+            "description": "Paid rains everyone may see: Rainpool or user, currency, pot, USD value and how many people."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () { pm.response.to.have.status(200); });",
+                  "pm.test('answers JSON', function () { pm.response.to.be.json; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /social/rain/mine — My rains",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/social/rain/mine?limit=30",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "social",
+                "rain",
+                "mine"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "30"
+                }
+              ]
+            },
+            "description": "Rains I made (every state), rains I received (and whether they were reverted), my auto-repeat series still to come, and development balances."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () { pm.response.to.have.status(200); });",
+                  "pm.test('answers JSON', function () { pm.response.to.be.json; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /social/rain/pending — My rains waiting for verification",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/social/rain/pending",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "social",
+                "rain",
+                "pending"
+              ]
+            },
+            "description": "RainPool Settings \"Security Verifications\": what each rain still needs (2FA, the emailed code, the questionnaire without its OK answers, a KYC level), including what an admin requested during a manual review."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () { pm.response.to.have.status(200); });",
+                  "pm.test('answers JSON', function () { pm.response.to.be.json; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /social/rain/balances — What I can rain",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/social/rain/balances",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "social",
+                "rain",
+                "balances"
+              ]
+            },
+            "description": "Spendable balance per currency. Development wallet only (RAIN_DEV_WALLET); empty while no ledger is connected."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () { pm.response.to.have.status(200); });",
+                  "pm.test('answers JSON', function () { pm.response.to.be.json; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /social/rain/confirm — Verify a rain",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-orebit-csrf",
+                "value": "{{csrfToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/social/rain/confirm",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "social",
+                "rain",
+                "confirm"
+              ]
+            },
+            "description": "Answers the security verification of a rain: 2FA code, emailed code (Require One / Require Both), questionnaire answers (a wrong answer rejects the rain) and the KYC check. Then the rain is paid, or goes to the manual admin verification (VPN / Proxy rule).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"rainId\": \"{{rainId}}\",\n  \"totpCode\": \"123456\",\n  \"emailCode\": \"123456\",\n  \"answers\": [\n    0\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () { pm.response.to.have.status(200); });",
+                  "pm.test('answers JSON', function () { pm.response.to.be.json; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /social/rain/resend-code — Email a new rain code",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-orebit-csrf",
+                "value": "{{csrfToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/social/rain/resend-code",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "social",
+                "rain",
+                "resend-code"
+              ]
+            },
+            "description": "Sends a fresh emailed code for a rain still waiting for one.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"rainId\": \"{{rainId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () { pm.response.to.have.status(200); });",
+                  "pm.test('answers JSON', function () { pm.response.to.be.json; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /social/rain/cancel — Cancel a rain waiting for verification",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-orebit-csrf",
+                "value": "{{csrfToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/social/rain/cancel",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "social",
+                "rain",
+                "cancel"
+              ]
+            },
+            "description": "Drops a rain that is still waiting for verification. Nothing was debited for it.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"rainId\": \"{{rainId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () { pm.response.to.have.status(200); });",
+                  "pm.test('answers JSON', function () { pm.response.to.be.json; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /social/rain/repeats/cancel — Stop my auto-repeat",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-orebit-csrf",
+                "value": "{{csrfToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/social/rain/repeats/cancel",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "social",
+                "rain",
+                "repeats",
+                "cancel"
+              ]
+            },
+            "description": "Chat MAIN \"/rain … (can be set on auto repeat)\": stops the rest of one of my auto-repeat series. Runs already paid stay paid.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"repeatId\": \"{{repeatId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () { pm.response.to.have.status(200); });",
+                  "pm.test('answers JSON', function () { pm.response.to.be.json; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /social/rain/status — Staff: Disable Overall / Rainpool / User Rains",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-orebit-csrf",
+                "value": "{{csrfToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/social/rain/status",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "social",
+                "rain",
+                "status"
+              ]
+            },
+            "description": "Chat SETTINGS \"Moderation Role Permissions\": DISABLE_OVERALL_RAINS (scope OVERALL), DISABLE_RAINPOOL_RAINS (SYSTEM), DISABLE_USER_RAINS (USER). ACT switches it ON or OFF; REPORT files a staff request with the note.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"scope\": \"USER\",\n  \"status\": \"OFF\",\n  \"note\": \"Spam rains in Global\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () { pm.response.to.have.status(200); });",
+                  "pm.test('answers JSON', function () { pm.response.to.be.json; });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

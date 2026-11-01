@@ -1,0 +1,57 @@
+# Local infrastructure for the admin backend.
+#
+# Postgres is deliberately absent. This service shares one database instance with
+# the main Orebit backend — it owns the `admin` schema, that one owns `identity` —
+# so Postgres is a native local install (or the main backend's compose file),
+# never a second container with its own volume. Two containers would mean two
+# databases, and then the admin service could not read platform data at all.
+#
+# The two Redis instances have different jobs and different durability, which is
+# why they are separate rather than one instance with two logical DBs: a `FLUSHALL`
+# aimed at the cache must not be able to take the durable one with it.
+
+services:
+  # Rate-limit counters, session-revocation flags, WebAuthn challenges.
+  #
+  # Everything here is reconstructible: losing it costs a database read and resets
+  # some counters. `allkeys-lru` is therefore correct — evicting under memory
+  # pressure is better than refusing writes.
+  redis-cache:
+    image: redis:7-alpine
+    container_name: orebit-admin-redis-cache
+    command: redis-server --save "" --appendonly no --maxmemory 256mb --maxmemory-policy allkeys-lru
+    ports:
+      - '6379:6379'
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  # The outbound OTP queue.
+  #
+  # AOF `everysec` and `noeviction`: a queued job that is silently evicted is a
+  # sign-in code nobody ever receives, which is the failure mode a queue exists to
+  # prevent. Since the emailed code is a mandatory second factor with no password
+  # recovery behind it, an evicted job is an admin locked out.
+  #
+  # `OtpQueueService` is the only writer. Reached via REDIS_DURABLE_URL, which is a
+  # separate connection rather than a second database on the cache above — AOF and
+  # `maxmemory-policy` are server-wide, so a logical DB would inherit the cache's
+  # eviction policy, and a FLUSHALL aimed at the cache would take this with it.
+  redis-durable:
+    image: redis:7-alpine
+    container_name: orebit-admin-redis-durable
+    command: redis-server --appendonly yes --appendfsync everysec --maxmemory-policy noeviction
+    ports:
+      - '6380:6379'
+    volumes:
+      - redis-durable-data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  redis-durable-data:

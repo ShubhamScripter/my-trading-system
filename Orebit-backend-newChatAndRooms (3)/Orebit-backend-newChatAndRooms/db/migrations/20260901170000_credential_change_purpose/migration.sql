@@ -1,0 +1,23 @@
+-- An emailed code proving the mailbox before a credential changes.
+--
+-- The product scope requires Email OTP as a factor in adding a passkey, enabling an
+-- authenticator, disabling either, and changing a password. None of those paths sent
+-- or checked a code: factor management spent an elevation ticket and nothing else,
+-- and password *change* verified only the current password.
+--
+-- ─── Why a new enum member rather than reusing PASSWORD_RESET ────────────────
+--
+-- Because `ChallengeDbOperation.issue` supersedes any live challenge for the same
+-- (user_id, purpose) inside a transaction — that is how "one live code at a time"
+-- is enforced. Reusing PASSWORD_RESET would therefore mean starting a factor change
+-- silently invalidated a password reset the user already had in their inbox, and
+-- vice versa. Two independent ceremonies need two purposes.
+--
+-- Nothing else changes. `ALTER TYPE ... ADD VALUE` on an existing enum leaves every
+-- current row untouched, and no code path issues this purpose until the service
+-- change lands alongside it.
+--
+-- Safe inside Prisma's per-file transaction on PostgreSQL 12+: the restriction that
+-- a newly added enum value cannot be USED in the same transaction that added it does
+-- not apply here, because nothing in this file references it.
+ALTER TYPE "identity"."ChallengePurpose" ADD VALUE IF NOT EXISTS 'CREDENTIAL_CHANGE';

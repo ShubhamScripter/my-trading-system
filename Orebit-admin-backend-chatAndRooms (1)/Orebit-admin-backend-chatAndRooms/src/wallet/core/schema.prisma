@@ -1,0 +1,694 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "./generated/client"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("WALLET_CORE_DATABASE_URL")
+  directUrl = env("WALLET_CORE_DATABASE_DIRECT_URL")
+  schemas   = ["price_conversion", "wallet_core"]
+}
+
+enum CurrencyKind {
+  CRYPTO
+  FIAT
+  @@schema("price_conversion")
+}
+
+enum CurrencyStatus {
+  ACTIVE
+  DISABLED
+  @@schema("price_conversion")
+}
+
+enum PriceProviderCode {
+  COINGECKO
+  ALCHEMY
+  COINMARKETCAP
+  @@schema("price_conversion")
+}
+
+enum PriceResolutionReason {
+  PRIMARY_CONFIRMED
+  FALLBACK_PRIMARY_FAILED
+  FALLBACK_DIVERGENCE
+  RECOVERED
+  STALE_DISPLAY
+  PRICE_UNAVAILABLE
+  @@schema("price_conversion")
+}
+
+enum WalletAvailability {
+  USER
+  MERCHANT
+  BOTH
+  @@schema("wallet_core")
+}
+enum WalletDesiredState {
+  OFF
+  ON
+  MAINTAIN
+  @@schema("wallet_core")
+}
+enum WalletProviderState {
+  ACTIVATED
+  DISABLED
+  MAINTENANCE
+  UNAVAILABLE
+  @@schema("wallet_core")
+}
+enum WalletAccessLevel {
+  ALL
+  KYC_L1
+  KYC_L2
+  @@schema("wallet_core")
+}
+enum WalletListingKind {
+  PERMANENT
+  TIME_LIMITED
+  @@schema("wallet_core")
+}
+enum WalletPriceReadiness {
+  HEALTHY
+  UNAVAILABLE
+  @@schema("wallet_core")
+}
+enum WalletCatalogueMode {
+  ALL
+  RELEVANT
+  @@schema("wallet_core")
+}
+enum WalletConfigurationStatus {
+  DRAFT
+  SCHEDULED
+  LIVE
+  ARCHIVED
+  REJECTED
+  @@schema("wallet_core")
+}
+
+enum WalletLogoAssetState {
+  STAGING
+  PENDING
+  ATTACHED
+  DELETE_PENDING
+  DELETED
+
+  @@schema("wallet_core")
+}
+enum WalletAddressKind {
+  HOT
+  COLD
+  STAKING
+  @@schema("wallet_core")
+}
+enum WalletReconciliationRunStatus {
+  SUCCESS
+  PARTIAL
+  FAILED
+  @@schema("wallet_core")
+}
+enum WalletReconciliationAlertBasis {
+  SIGNED
+  POSITIVE_ONLY
+  @@schema("wallet_core")
+}
+enum WalletReconciliationItemStatus {
+  COMPLETE
+  PARTIAL
+  @@schema("wallet_core")
+}
+enum WalletReconciliationComponentKind {
+  HOT
+  COLD
+  STAKING
+  BINANCE
+  @@schema("wallet_core")
+}
+enum WalletAttemptStage {
+  ENCRYPT
+  BALANCE
+  @@schema("wallet_core")
+}
+enum WalletAttemptOutcome {
+  SUCCESS
+  FAILED
+  @@schema("wallet_core")
+}
+enum WalletReconciliationSafeErrorCode {
+  ENCRYPTION_FAILED
+  AUTHENTICATION_FAILED
+  UNAUTHORIZED_IP
+  PROVIDER_MAINTENANCE
+  PROVIDER_DISABLED
+  PROVIDER_NOT_FOUND
+  PROVIDER_REJECTED
+  TIMEOUT
+  TRANSPORT_ERROR
+  RESPONSE_TOO_LARGE
+  INVALID_RESPONSE
+  INVALID_DECIMAL
+  PRICE_UNAVAILABLE
+  @@schema("wallet_core")
+}
+enum WalletStakeSelectedSource {
+  REPORTED_TOTAL
+  COMPONENT_SUM
+  @@schema("wallet_core")
+}
+enum WalletCatalogueRefreshErrorCode {
+  PROVIDER_REJECTED
+  TIMEOUT
+  TRANSPORT_ERROR
+  RESPONSE_TOO_LARGE
+  INVALID_RESPONSE
+  CATALOGUE_LIMIT_EXCEEDED
+  PAGINATION_INCONSISTENT
+  DUPLICATE_PROVIDER_ID
+  WRONG_CHAIN_ASSOCIATION
+  DATABASE_ERROR
+  AUDIT_ERROR
+  @@schema("wallet_core")
+}
+enum WalletAlertCategory {
+  PRICE_MAINTENANCE
+  DELISTING_PENDING
+  DELISTING_ACCOUNT_REVIEW
+  SHORTFALL
+  PARTIAL_DATA
+  STAKING_TOTAL_MISMATCH
+  CATALOGUE_REFRESH_FAILED
+  PROVIDER_MAINTENANCE
+  @@schema("wallet_core")
+}
+enum WalletAlertStatus {
+  ACTIVE
+  CLEARED
+  @@schema("wallet_core")
+}
+enum WalletOutboxStatus {
+  PENDING
+  PROCESSING
+  SENT
+  FAILED
+  DEAD
+  @@schema("wallet_core")
+}
+enum WalletCronStatus {
+  RUNNING
+  SUCCESS
+  PARTIAL
+  FAILED
+  SKIPPED
+  @@schema("wallet_core")
+}
+enum WalletCronSafeReasonCode {
+  LOGO_CLEANUP_PARTIAL
+  LIFECYCLE_PARTIAL
+  RECONCILIATION_PARTIAL
+  CONFIGURATION_REJECTED
+  PROVIDER_OBSERVATION_PARTIAL
+  PROVIDER_OBSERVATION_FAILED
+  DEPENDENCY_UNAVAILABLE
+  MISSED_SCHEDULE
+  CATCHUP_TRUNCATED
+  UNEXPECTED_ERROR
+  @@schema("wallet_core")
+}
+enum WalletDelistingStatus {
+  RUNNING
+  COMPLETED
+  PARTIAL
+  FAILED
+  @@schema("wallet_core")
+}
+
+model CurrencyMaster {
+  id            String   @id @db.Uuid
+  symbol        String   @db.VarChar(32)
+  name          String   @db.VarChar(128)
+  decimals      Int
+  kind          CurrencyKind
+  pricingStatus CurrencyStatus @map("pricing_status")
+  autoDisabled  Boolean  @default(false) @map("auto_disabled")
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime @default(now()) @map("updated_at") @db.Timestamptz(6)
+
+  @@map("currencies")
+  @@schema("price_conversion")
+}
+
+model WalletChain {
+  id                      String              @id @db.Uuid
+  providerChainId         BigInt              @unique @map("provider_chain_id")
+  blockchainReference     String              @map("blockchain_reference") @db.VarChar(160)
+  shortName               String              @unique @map("short_name") @db.VarChar(32)
+  name                    String              @db.VarChar(128)
+  isEvm                   Boolean             @map("is_evm")
+  logoObjectKey           String?             @map("logo_object_key") @db.VarChar(255)
+  availableFor            WalletAvailability  @default(BOTH) @map("available_for")
+  desiredState            WalletDesiredState  @default(OFF) @map("desired_state")
+  maintenancePinned       Boolean             @default(false) @map("maintenance_pinned")
+  providerState           WalletProviderState @default(UNAVAILABLE) @map("provider_state")
+  consecutiveFailedChecks Int                 @default(0) @map("consecutive_failed_checks")
+  lastSuccessAt           DateTime?           @map("last_success_at") @db.Timestamptz(6)
+  lastErrorAt             DateTime?           @map("last_error_at") @db.Timestamptz(6)
+  providerUpdatedAt       DateTime?           @map("provider_updated_at") @db.Timestamptz(6)
+  policyRevision          BigInt              @default(0) @map("policy_revision")
+  createdAt               DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt               DateTime            @default(now()) @map("updated_at") @db.Timestamptz(6)
+
+  @@index([providerState, id], map: "chains_provider_state_idx")
+  @@map("chains")
+  @@schema("wallet_core")
+}
+
+model WalletCurrencySetting {
+  currencyId                       String               @id @map("currency_id") @db.Uuid
+  binanceReference                 String?              @map("binance_reference") @db.VarChar(64)
+  logoObjectKey                    String?              @map("logo_object_key") @db.VarChar(255)
+  viewCurrencyEnabled              Boolean              @default(false) @map("view_currency_enabled")
+  geoGlobal                        Boolean              @default(true) @map("geo_global")
+  geoCountries                    String[]             @default([]) @map("geo_countries")
+  geoContinents                   String[]             @default([]) @map("geo_continents")
+  accessLevel                     WalletAccessLevel    @default(ALL) @map("access_level")
+  availableFor                    WalletAvailability   @default(BOTH) @map("available_for")
+  listingKind                     WalletListingKind    @default(PERMANENT) @map("listing_kind")
+  listingStartAt                  DateTime?            @map("listing_start_at") @db.Timestamptz(6)
+  delistAt                        DateTime?            @map("delist_at") @db.Timestamptz(6)
+  showBeforeListing               Boolean              @default(false) @map("show_before_listing")
+  premiumEarlyAccessAt            DateTime?            @map("premium_early_access_at") @db.Timestamptz(6)
+  premiumEarlyAccessOps           String[]             @default([]) @map("premium_early_access_ops")
+  soEarlyAccessAt                 DateTime?            @map("so_early_access_at") @db.Timestamptz(6)
+  soEarlyAccessOps                String[]             @default([]) @map("so_early_access_ops")
+  desiredState                    WalletDesiredState   @default(OFF) @map("desired_state")
+  maintainUsers                   Boolean              @default(false) @map("maintain_users")
+  maintainSo                      Boolean              @default(false) @map("maintain_so")
+  showBalanceUsers                Boolean              @default(true) @map("show_balance_users")
+  showBalanceSo                   Boolean              @default(true) @map("show_balance_so")
+  postDelistOps                   String[]             @default([]) @map("post_delist_ops")
+  afterDelistMode                 String?              @map("after_delist_mode") @db.VarChar(32)
+  autoExchangeToCurrencyId        String?              @map("auto_exchange_to_currency_id") @db.Uuid
+  autoExchangeFeeBps              Int?                 @map("auto_exchange_fee_bps")
+  leaveDays                       Int?                 @map("leave_days")
+  afterLeaveAction                String?              @map("after_leave_action") @db.VarChar(32)
+  afterLeaveToCurrencyId          String?              @map("after_leave_to_currency_id") @db.Uuid
+  afterLeaveFeeBps                Int?                 @map("after_leave_fee_bps")
+  legacyAccessPolicy              Json                 @default("{}") @map("legacy_access_policy") @db.JsonB
+  legacyDelistPolicy              Json                 @default("{}") @map("legacy_delist_policy") @db.JsonB
+  priceReadiness                  WalletPriceReadiness @default(UNAVAILABLE) @map("price_readiness")
+  priceReadinessChangedAt         DateTime?            @map("price_readiness_changed_at") @db.Timestamptz(6)
+  policyRevision                  BigInt               @default(0) @map("policy_revision")
+  createdAt                       DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt                       DateTime             @default(now()) @map("updated_at") @db.Timestamptz(6)
+
+  @@index([desiredState, priceReadiness, currencyId], map: "currency_settings_state_idx")
+  @@index([listingStartAt, currencyId], map: "currency_settings_listing_due_idx")
+  @@index([delistAt, currencyId], map: "currency_settings_delist_due_idx")
+  @@map("currency_settings")
+  @@schema("wallet_core")
+}
+
+model WalletCurrencyChain {
+  id                      String              @id @db.Uuid
+  currencyId              String              @map("currency_id") @db.Uuid
+  chainId                 String              @map("chain_id") @db.Uuid
+  providerCoinId          BigInt              @map("provider_coin_id")
+  blockchainReference     String              @map("blockchain_reference") @db.VarChar(160)
+  isToken                 Boolean             @map("is_token")
+  isNative                Boolean             @map("is_native")
+  tokenContractAddress    String?             @map("token_contract_address") @db.VarChar(256)
+  blockchainPrecision     Int                 @map("blockchain_precision")
+  desiredState            WalletDesiredState  @default(OFF) @map("desired_state")
+  maintenancePinned       Boolean             @default(false) @map("maintenance_pinned")
+  providerState           WalletProviderState @default(UNAVAILABLE) @map("provider_state")
+  consecutiveFailedChecks Int                 @default(0) @map("consecutive_failed_checks")
+  lastSuccessAt           DateTime?           @map("last_success_at") @db.Timestamptz(6)
+  lastErrorAt             DateTime?           @map("last_error_at") @db.Timestamptz(6)
+  providerUpdatedAt       DateTime?           @map("provider_updated_at") @db.Timestamptz(6)
+  createdAt               DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt               DateTime            @default(now()) @map("updated_at") @db.Timestamptz(6)
+  legacyCurrencyCodes     LegacyCurrencyChainCode[] @relation("LegacyCurrencyMappedBinding")
+
+  @@unique([id, currencyId])
+  @@unique([currencyId, chainId])
+  @@unique([chainId, providerCoinId])
+  @@index([currencyId, chainId, id], map: "currencies_binding_read_idx")
+  @@map("currencies")
+  @@schema("wallet_core")
+}
+
+model ProviderCatalogueChain {
+  providerChainId BigInt              @id @map("provider_chain_id")
+  name            String              @db.VarChar(128)
+  shortName       String              @map("short_name") @db.VarChar(32)
+  isEvm           Boolean             @map("is_evm")
+  providerState   WalletProviderState @map("provider_state")
+  revision        BigInt
+  refreshedAt     DateTime            @map("refreshed_at") @db.Timestamptz(6)
+
+  @@map("provider_catalogue_chains")
+  @@schema("wallet_core")
+}
+
+model ProviderCatalogueCurrency {
+  providerChainId     BigInt              @map("provider_chain_id")
+  providerCoinId      BigInt              @map("provider_coin_id")
+  currencyName        String              @map("currency_name") @db.VarChar(128)
+  tokenAddress        String?             @map("token_address") @db.VarChar(256)
+  isBaseCurrency      Boolean             @map("is_base_currency")
+  isStake             Boolean             @map("is_stake")
+  blockchainPrecision Int                 @map("blockchain_precision")
+  providerState       WalletProviderState @map("provider_state")
+  revision            BigInt
+  refreshedAt         DateTime            @map("refreshed_at") @db.Timestamptz(6)
+
+  @@id([providerChainId, providerCoinId])
+  @@map("provider_catalogue_currencies")
+  @@schema("wallet_core")
+}
+
+model WalletSetting {
+  id                         Boolean             @id @default(true)
+  revision                   BigInt              @default(0)
+  providerCatalogueRevision BigInt              @default(0) @map("provider_catalogue_revision")
+  globalDesiredState         WalletDesiredState  @default(ON) @map("global_desired_state")
+  catalogueMode              WalletCatalogueMode @default(ALL) @map("catalogue_mode")
+  includeTreasury            Boolean             @default(true) @map("include_treasury")
+  includeCollection          Boolean             @default(false) @map("include_collection")
+  reconciliationAlertPercent Decimal             @default(5.000) @map("reconciliation_alert_percent")
+  reconciliationAlertBasis WalletReconciliationAlertBasis @default(SIGNED) @map("reconciliation_alert_basis")
+  defaultViewCurrencyId      String?             @map("default_view_currency_id") @db.Uuid
+  defaultCryptoCurrencyId    String?             @map("default_crypto_currency_id") @db.Uuid
+  defaultCurrencyIds         String[]            @default([]) @map("default_currency_ids") @db.Uuid
+  updatedAt                  DateTime            @default(now()) @map("updated_at") @db.Timestamptz(6)
+
+  @@map("wallet_settings")
+  @@schema("wallet_core")
+}
+
+model WalletConfigurationChange {
+  id          String                    @id @db.Uuid
+  revision    BigInt                    @unique
+  status      WalletConfigurationStatus
+  draftGuardKey Int?                    @default(dbgenerated()) @map("draft_guard_key") @db.SmallInt @ignore
+  liveGuardKey Int?                     @default(dbgenerated()) @map("live_guard_key") @db.SmallInt @ignore
+  effectiveAt DateTime?                 @map("effective_at") @db.Timestamptz(6)
+  reason      String                    @db.VarChar(500)
+  changelog   String?                   @db.VarChar(2000)
+  changelogId String?                   @map("changelog_id") @db.Uuid
+  actorId     String                    @map("actor_id") @db.Uuid
+  snapshot    Json                      @db.JsonB
+  appliedAt   DateTime?                 @map("applied_at") @db.Timestamptz(6)
+  createdAt   DateTime                  @default(now()) @map("created_at") @db.Timestamptz(6)
+  logoReferences WalletLogoAssetReference[]
+
+  @@index([status, id], map: "configuration_changes_draft_lookup_idx")
+  @@index([status, effectiveAt], map: "configuration_changes_schedule_idx")
+  @@map("configuration_changes")
+  @@schema("wallet_core")
+}
+
+model WalletLogoAsset {
+  objectKey              String               @id @map("object_key") @db.VarChar(69)
+  state                  WalletLogoAssetState @default(STAGING)
+  createdAt              DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+  expiresAt              DateTime             @map("expires_at") @db.Timestamptz(6)
+  uploadedAt             DateTime?            @map("uploaded_at") @db.Timestamptz(6)
+  attachedAt             DateTime?            @map("attached_at") @db.Timestamptz(6)
+  cleanupToken           String?              @map("cleanup_token") @db.Uuid
+  cleanupLeaseExpiresAt  DateTime?            @map("cleanup_lease_expires_at") @db.Timestamptz(6)
+  deleteAttemptCount     Int                  @default(0) @map("delete_attempt_count")
+  deletedAt              DateTime?            @map("deleted_at") @db.Timestamptz(6)
+  references             WalletLogoAssetReference[]
+
+  @@index([state, expiresAt, objectKey], map: "wallet_logo_assets_cleanup_idx")
+  @@map("wallet_logo_assets")
+  @@schema("wallet_core")
+}
+
+model WalletLogoAssetReference {
+  configurationChangeId String                    @map("configuration_change_id") @db.Uuid
+  objectKey             String                    @map("object_key") @db.VarChar(69)
+  attachedAt            DateTime                  @default(now()) @map("attached_at") @db.Timestamptz(6)
+  configurationChange   WalletConfigurationChange @relation(fields: [configurationChangeId], references: [id])
+  asset                 WalletLogoAsset           @relation(fields: [objectKey], references: [objectKey])
+
+  @@id([configurationChangeId, objectKey])
+  @@index([objectKey], map: "wallet_logo_asset_references_key_idx")
+  @@map("wallet_logo_asset_references")
+  @@schema("wallet_core")
+}
+
+model WalletUserPreference {
+  userId                        String   @id @map("user_id") @db.Uuid
+  preferredViewCurrencyId       String?  @map("preferred_view_currency_id") @db.Uuid
+  preferredCryptocurrencyId     String?  @map("preferred_cryptocurrency_id") @db.Uuid
+  updatedAt                     DateTime @default(now()) @map("updated_at") @db.Timestamptz(6)
+
+  @@map("user_preferences")
+  @@schema("wallet_core")
+}
+
+model WalletAdminPreference {
+  adminId   String   @id @map("admin_id") @db.Uuid
+  timezone  String   @default("Asia/Kolkata") @db.VarChar(64)
+  updatedAt DateTime @default(now()) @map("updated_at") @db.Timestamptz(6)
+
+  @@map("admin_preferences")
+  @@schema("wallet_core")
+}
+
+model WalletStateEvent {
+  id          String   @id @db.Uuid
+  eventType   String   @map("event_type") @db.VarChar(96)
+  subjectType String   @map("subject_type") @db.VarChar(32)
+  subjectId   String   @map("subject_id") @db.Uuid
+  runId       String?  @map("run_id") @db.Uuid
+  actorId     String?  @map("actor_id") @db.Uuid
+  payload     Json     @db.JsonB
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  // Partial history indexes on (created_at DESC, id DESC) are defined only in migration SQL:
+  // state_events_history_state_cursor and state_events_history_provider_cursor.
+  @@map("state_events")
+  @@schema("wallet_core")
+}
+
+model WalletCustodyAddress {
+  createdRevision   BigInt            @default(0) @map("created_revision")
+  retiredRevision   BigInt?           @map("retired_revision")
+  retiredAt         DateTime?         @map("retired_at") @db.Timestamptz(6)
+  id                String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  currencyChainId   String            @map("currency_chain_id") @db.Uuid
+  kind              WalletAddressKind
+  walletAddress     String            @map("wallet_address") @db.VarChar(512)
+  addressIdentity   String            @map("address_identity") @db.VarChar(512)
+  createdAt         DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  // Active-only identity uniqueness is the canonical migration's partial index.
+  @@index([currencyChainId, createdRevision, retiredRevision, id], map: "custody_addresses_revision_membership")
+  @@index([currencyChainId, kind, addressIdentity, id], map: "custody_addresses_binding_kind_idx")
+  @@map("custody_addresses")
+  @@schema("wallet_core")
+}
+
+model WalletReconciliationRun {
+  expectedCurrencyCount             Int?                          @map("expected_currency_count")
+  includeTreasury                   Boolean?                      @map("include_treasury")
+  includeCollection                 Boolean?                      @map("include_collection")
+  appliedReconciliationAlertBasis    WalletReconciliationAlertBasis? @map("applied_reconciliation_alert_basis")
+  id                                String                        @id @db.Uuid
+  status                            WalletReconciliationRunStatus?
+  scheduledFor                      DateTime                      @map("scheduled_for") @db.Timestamptz(6)
+  valuationAt                       DateTime                      @default(now()) @map("valuation_at") @db.Timestamptz(6)
+  appliedReconciliationAlertPercent Decimal                       @map("applied_reconciliation_alert_percent")
+  appliedConfigurationRevision      BigInt                        @map("applied_configuration_revision")
+  comparisonRule                    String                        @map("comparison_rule") @db.VarChar(64)
+  currencyCount                     Int                           @default(0) @map("currency_count")
+  warningCount                      Int                           @default(0) @map("warning_count")
+  safeErrorCode                     String?                       @map("safe_error_code") @db.VarChar(64)
+  createdAt                         DateTime                      @default(now()) @map("created_at") @db.Timestamptz(6)
+  completedAt                       DateTime?                     @map("completed_at") @db.Timestamptz(6)
+
+  @@index([createdAt(sort: Desc), id(sort: Desc)], map: "wallet_reconciliation_runs_cursor_idx")
+  @@map("wallet_reconciliation_runs")
+  @@schema("wallet_core")
+}
+
+model WalletReconciliationItem {
+  ledgerSignedTotal                 Decimal?                       @map("ledger_signed_total") @db.Decimal(78, 18)
+  ledgerPositiveTotal               Decimal?                       @map("ledger_positive_total") @db.Decimal(78, 18)
+  appliedReconciliationAlertBasis    WalletReconciliationAlertBasis? @map("applied_reconciliation_alert_basis")
+  id                                String                         @id @db.Uuid
+  runId                             String                         @map("run_id") @db.Uuid
+  currencyId                        String                         @map("currency_id") @db.Uuid
+  status                            WalletReconciliationItemStatus
+  hotColdBalance                    Decimal                        @map("hot_cold_balance") @db.Decimal(78, 18)
+  stakingBalance                    Decimal                        @map("staking_balance") @db.Decimal(78, 18)
+  binanceBalance                    Decimal                        @map("binance_balance") @db.Decimal(38, 18)
+  totalCustodyBalance               Decimal                        @map("total_custody_balance") @db.Decimal(78, 18)
+  requiredBacking                   Decimal                        @map("required_backing") @db.Decimal(78, 18)
+  userMerchantBalance               Decimal                        @map("user_merchant_balance") @db.Decimal(78, 18)
+  treasuryBalance                   Decimal                        @map("treasury_balance") @db.Decimal(38, 18)
+  collectionBalance                 Decimal                        @map("collection_balance") @db.Decimal(38, 18)
+  partialReasons                    String[]                       @default([]) @map("partial_reasons")
+  shortfallSuppressed               Boolean                        @map("shortfall_suppressed")
+  shortfallPercent                  Decimal?                       @map("shortfall_percent") @db.Decimal(38, 18)
+  appliedReconciliationAlertPercent Decimal                        @map("applied_reconciliation_alert_percent")
+  appliedConfigurationRevision      BigInt                         @map("applied_configuration_revision")
+  comparisonRule                    String                         @map("comparison_rule") @db.VarChar(64)
+  priceResolutionId                 String?                        @map("price_resolution_id") @db.Uuid
+  priceSnapshotId                   String?                        @map("price_snapshot_id") @db.Uuid
+  priceProvider                     PriceProviderCode?             @map("price_provider")
+  priceUsd                          Decimal?                       @map("price_usd") @db.Decimal(38, 18)
+  priceObservedAt                   DateTime?                      @map("price_observed_at") @db.Timestamptz(6)
+  priceResolutionReason             PriceResolutionReason?        @map("price_resolution_reason")
+  priceUsedFallback                 Boolean?                       @map("price_used_fallback")
+  createdAt                         DateTime                       @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@unique([runId, currencyId])
+  @@index([currencyId, createdAt(sort: Desc), id(sort: Desc)], map: "wallet_reconciliation_items_currency_cursor_idx")
+  @@map("wallet_reconciliation_items")
+  @@schema("wallet_core")
+}
+
+model WalletReconciliationComponent {
+  walletAddress                String?                           @map("wallet_address") @db.VarChar(512)
+  id                           String                            @id @db.Uuid
+  runItemId                    String                            @map("run_item_id") @db.Uuid
+  kind                         WalletReconciliationComponentKind
+  currencyChainId              String?                           @map("currency_chain_id") @db.Uuid
+  custodyAddressId             String?                           @map("custody_address_id") @db.Uuid
+  binanceReference             String?                           @map("binance_reference") @db.VarChar(64)
+  attemptsUsed                 Int                               @map("attempts_used")
+  acceptedRawDecimal           String?                           @map("accepted_raw_decimal") @db.VarChar(160)
+  selectedBalance              Decimal?                          @map("selected_balance") @db.Decimal(39, 18)
+  safeErrorCode                WalletReconciliationSafeErrorCode? @map("safe_error_code")
+  totalAdminStakeBalance       Decimal?                          @map("total_admin_stake_balance") @db.Decimal(38, 18)
+  totalAdminManualStakeBalance Decimal?                          @map("total_admin_manual_stake_balance") @db.Decimal(38, 18)
+  totalBalance                 Decimal?                          @map("total_balance") @db.Decimal(38, 18)
+  stakeSelectedSource          WalletStakeSelectedSource?        @map("stake_selected_source")
+  stakeTotalMismatch           Boolean                           @default(false) @map("stake_total_mismatch")
+  createdAt                    DateTime                          @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([runItemId, kind, id], map: "wallet_reconciliation_components_item_idx")
+  @@map("wallet_reconciliation_components")
+  @@schema("wallet_core")
+}
+
+model WalletReconciliationAttempt {
+  id                    String               @id @db.Uuid
+  componentId           String               @map("component_id") @db.Uuid
+  attemptOrdinal        Int                  @map("attempt_ordinal")
+  configuredDelayMs     Int                  @map("configured_delay_ms")
+  lastCompletedStage    WalletAttemptStage?  @map("last_completed_stage")
+  outcome               WalletAttemptOutcome
+  safeErrorCode         WalletReconciliationSafeErrorCode? @map("safe_error_code")
+  createdAt             DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@unique([componentId, attemptOrdinal])
+  @@map("wallet_reconciliation_attempts")
+  @@schema("wallet_core")
+}
+
+model WalletAlert {
+  id         String              @id @db.Uuid
+  dedupeKey  String              @unique @map("dedupe_key") @db.VarChar(200)
+  category   WalletAlertCategory
+  status     WalletAlertStatus
+  currencyId String?             @map("currency_id") @db.Uuid
+  payload    Json                @db.JsonB
+  openedAt   DateTime            @map("opened_at") @db.Timestamptz(6)
+  clearedAt  DateTime?           @map("cleared_at") @db.Timestamptz(6)
+  updatedAt  DateTime            @default(now()) @map("updated_at") @db.Timestamptz(6)
+
+  @@index([status, category, currencyId], map: "wallet_alerts_status_idx")
+  @@map("wallet_alerts")
+  @@schema("wallet_core")
+}
+
+model WalletAlertEvent {
+  id        String              @id @db.Uuid
+  alertId   String              @map("alert_id") @db.Uuid
+  category  WalletAlertCategory
+  status    WalletAlertStatus
+  payload   Json                @db.JsonB
+  createdAt DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@map("wallet_alert_events")
+  @@schema("wallet_core")
+}
+
+model WalletNotificationOutbox {
+  id            String             @id @db.Uuid
+  eventType     String             @map("event_type") @db.VarChar(96)
+  dedupeKey     String             @unique @map("dedupe_key") @db.VarChar(200)
+  payload       Json               @db.JsonB
+  status        WalletOutboxStatus @default(PENDING)
+  attemptCount  Int                @default(0) @map("attempt_count")
+  nextAttemptAt DateTime?          @map("next_attempt_at") @db.Timestamptz(6)
+  safeErrorCode String?            @map("safe_error_code") @db.VarChar(64)
+  createdAt     DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  deliveredAt   DateTime?          @map("delivered_at") @db.Timestamptz(6)
+
+  @@index([status, nextAttemptAt, createdAt, id], map: "wallet_notification_outbox_pending_idx")
+  @@map("wallet_notification_outbox")
+  @@schema("wallet_core")
+}
+
+model WalletCronjobRun {
+  id               String           @id @db.Uuid
+  jobName          String           @map("job_name") @db.VarChar(96)
+  scheduledFor     DateTime         @map("scheduled_for") @db.Timestamptz(6)
+  workerInstanceId String           @map("worker_instance_id") @db.VarChar(128)
+  attemptCount     Int              @default(1) @map("attempt_count")
+  status           WalletCronStatus
+  leaseExpiresAt   DateTime?        @map("lease_expires_at") @db.Timestamptz(6)
+  processedCount   Int              @default(0) @map("processed_count")
+  failedCount      Int              @default(0) @map("failed_count")
+  skippedBucketCount Int            @default(0) @map("skipped_bucket_count")
+  safeErrorCode    WalletCronSafeReasonCode? @map("safe_error_code")
+  startedAt        DateTime         @default(now()) @map("started_at") @db.Timestamptz(6)
+  finishedAt       DateTime?        @map("finished_at") @db.Timestamptz(6)
+
+  @@unique([jobName, scheduledFor])
+  @@index([jobName, status, scheduledFor], map: "cronjob_runs_status_idx")
+  @@index([jobName, status, leaseExpiresAt, scheduledFor, id], map: "cronjob_runs_reclaim_idx")
+  @@map("cronjob_runs")
+  @@schema("wallet_core")
+}
+
+model WalletDelistingExecution {
+  id             String                 @id @db.Uuid
+  currencyId     String                 @map("currency_id") @db.Uuid
+  policyRevision BigInt                 @map("policy_revision")
+  deadline       DateTime               @db.Timestamptz(6)
+  cursor         String?                @db.VarChar(512)
+  cursorOrdinal  BigInt                 @default(0) @map("cursor_ordinal")
+  processedCount Int                    @default(0) @map("processed_count")
+  skippedCount   Int                    @default(0) @map("skipped_count")
+  failedCount    Int                    @default(0) @map("failed_count")
+  status         WalletDelistingStatus
+  safeErrorCode  String?                @map("safe_error_code") @db.VarChar(64)
+  createdAt      DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime               @default(now()) @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([currencyId, policyRevision, deadline])
+  @@index([status, deadline, id], map: "delisting_executions_status_idx")
+  @@map("delisting_executions")
+  @@schema("wallet_core")
+}
+
+model LegacyCurrencyChainCode {
+  currencyId         String  @map("currency_id") @db.Uuid
+  chainCode          String  @map("chain_code") @db.VarChar(64)
+  blockchainPrecision Int    @map("blockchain_precision")
+  mappedBindingId    String? @map("mapped_binding_id") @db.Uuid
+  mappedBinding      WalletCurrencyChain? @relation("LegacyCurrencyMappedBinding", fields: [mappedBindingId, currencyId], references: [id, currencyId], onDelete: NoAction, onUpdate: NoAction)
+
+  @@id([currencyId, chainCode])
+  @@map("legacy_currency_chain_codes")
+  @@schema("wallet_core")
+}

@@ -1,0 +1,31 @@
+-- A delivery attempt that was deliberately NOT made, because the code the message
+-- carried had already expired.
+--
+-- ─── The failure this records ────────────────────────────────────────────────
+--
+-- The mail queue renders a message once and replays that exact body on every retry.
+-- For a one-time code that body is a promise with a deadline attached, and the queue
+-- knew about the promise but not the deadline: five attempts spread over seventeen
+-- and a half minutes, all carrying the same six digits, against a code that dies at
+-- ten. The last two attempts delivered a code that could not work, which from the
+-- recipient's side reads as one OTP being sent again and again.
+--
+-- `MailJob.validUntil` now carries the deadline and `MailSender` checks it before
+-- every provider call. When it refuses, the attempt is recorded with this status.
+--
+-- ─── Why not reuse FAILED ────────────────────────────────────────────────────
+--
+-- Because they answer a support ticket differently. FAILED means a relay would not
+-- take the message and the user is owed an explanation; EXPIRED means we declined to
+-- post something already dead, which is the system working. Folding them together
+-- would make the bounce-rate metric climb every time the guard did its job, and would
+-- hide the one signal that says the retry ladder is mistuned for a perishable kind.
+--
+-- Nothing else changes. `ALTER TYPE ... ADD VALUE` leaves every existing row
+-- untouched, and no code path writes this value until the service change lands
+-- alongside it.
+--
+-- Safe inside Prisma's per-file transaction on PostgreSQL 12+: the restriction that a
+-- newly added enum value cannot be USED in the same transaction that added it does not
+-- apply, because nothing in this file references it.
+ALTER TYPE "identity"."MailDeliveryStatus" ADD VALUE IF NOT EXISTS 'EXPIRED';

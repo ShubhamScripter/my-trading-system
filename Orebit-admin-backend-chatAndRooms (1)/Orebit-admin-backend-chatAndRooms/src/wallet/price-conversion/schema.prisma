@@ -1,0 +1,557 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "./generated/client"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("PRICE_DATABASE_URL")
+  directUrl = env("PRICE_DATABASE_DIRECT_URL")
+  schemas   = ["price_conversion"]
+}
+
+enum PriceProviderCode {
+  COINGECKO
+  ALCHEMY
+  COINMARKETCAP
+
+  @@schema("price_conversion")
+}
+
+enum PriceProviderRole {
+  PRIMARY
+  COMPARISON
+  FALLBACK
+
+  @@schema("price_conversion")
+}
+
+enum CurrencyKind {
+  CRYPTO
+  FIAT
+
+  @@schema("price_conversion")
+}
+
+enum CurrencyStatus {
+  ACTIVE
+  DISABLED
+
+  @@schema("price_conversion")
+}
+
+enum PriceFetchRunStatus {
+  RUNNING
+  SUCCESS
+  FAILED
+  SKIPPED
+
+  @@schema("price_conversion")
+}
+
+enum PriceResolutionReason {
+  PRIMARY_CONFIRMED
+  FALLBACK_PRIMARY_FAILED
+  FALLBACK_DIVERGENCE
+  RECOVERED
+  STALE_DISPLAY
+  PRICE_UNAVAILABLE
+
+  @@schema("price_conversion")
+}
+
+enum PriceConfigChangeStatus {
+  DRAFT
+  SCHEDULED
+  LIVE
+  ARCHIVED
+  REJECTED
+
+  @@schema("price_conversion")
+}
+
+enum PriceUsagePeriod {
+  DAILY
+  MONTHLY
+
+  @@schema("price_conversion")
+}
+
+enum CurrencyAudience {
+  USER
+  MERCHANT
+  BOTH
+
+  @@schema("price_conversion")
+}
+
+enum CurrencyAccessLevel {
+  ALL
+  KYC_L1
+  KYC_L2
+
+  @@schema("price_conversion")
+}
+
+enum CurrencyListingKind {
+  PERMANENT
+  TIME_LIMITED
+
+  @@schema("price_conversion")
+}
+
+enum CurrencyListingState {
+  PRELISTED
+  LISTED
+  DELISTED
+  MAINTAIN
+
+  @@schema("price_conversion")
+}
+
+enum AfterDelistMode {
+  AUTO_EXCHANGE
+  LEAVE
+
+  @@schema("price_conversion")
+}
+
+enum AfterLeaveMode {
+  LOSS
+  AUTO_EXCHANGE
+
+  @@schema("price_conversion")
+}
+
+enum PriceNotificationType {
+  PROVIDER_FAILURE
+  PROVIDER_RECOVERY
+  CURRENCY_FAILOVER
+  CURRENCY_RECOVERY
+  CURRENCY_DISABLED
+  VIEW_PROVIDER_SWITCH
+  USAGE_WARNING
+  USAGE_HARD_STOP
+  PROVIDER_MAINTAIN
+  CONFIG_REJECTED
+
+  @@schema("price_conversion")
+}
+
+enum NotificationDeliveryStatus {
+  PENDING
+  PROCESSING
+  SENT
+  FAILED
+  DEAD
+
+  @@schema("price_conversion")
+}
+
+enum PriceSecurityState {
+  HEALTHY
+  DEGRADED
+
+  @@schema("price_conversion")
+}
+
+enum PriceViewResolutionStatus {
+  AVAILABLE
+  UNAVAILABLE
+
+  @@schema("price_conversion")
+}
+
+enum PriceViewResolutionReason {
+  CONFIGURED_PROVIDER
+  SENSITIVE_FALLBACK_PROVIDER
+  ALCHEMY_FALLBACK_SECONDARY
+  VIEW_FAILURE_SECONDARY
+  SECONDARY_UNAVAILABLE
+
+  @@schema("price_conversion")
+}
+
+model PriceProvider {
+  id                              String                    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code                            PriceProviderCode         @unique
+  enabled                         Boolean                   @default(true)
+  sensitiveRole                   PriceProviderRole?        @unique @map("sensitive_role")
+  viewEnabled                     Boolean                   @default(false) @map("view_enabled")
+  revision                        BigInt                    @default(0)
+  refreshIntervalSeconds          Int                       @default(60) @map("refresh_interval_seconds")
+  freshnessSeconds                Int                       @default(600) @map("freshness_seconds")
+  createdAt                       DateTime                  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt                       DateTime                  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  refs                            CurrencyProviderRef[]
+  snapshots                       PriceSnapshot[]
+  fetchRuns                       PriceFetchRun[]
+  resolutions                     PriceResolution[]         @relation("EffectiveProvider")
+  configuredPrimaryResolutions    PriceResolution[]         @relation("ConfiguredPrimaryProvider")
+  configuredComparisonResolutions PriceResolution[]         @relation("ConfiguredComparisonProvider")
+  configuredFallbackResolutions   PriceResolution[]         @relation("ConfiguredFallbackProvider")
+  health                          PriceProviderHealth[]
+  callStats                       PriceProviderCallStat[]
+  viewSnapshots                   PriceViewSnapshot[]
+  viewHealth                      PriceViewProviderHealth[]
+  viewFetchBuckets                PriceViewFetchBucket[]
+  selectedViewResolutions         PriceViewResolution[]     @relation("SelectedViewProvider")
+  configuredViewResolutions       PriceViewResolution[]     @relation("ConfiguredViewProvider")
+  secondaryViewResolutions        PriceViewResolution[]     @relation("SecondaryViewProvider")
+  notifications                   PriceAdminNotification[]
+
+  @@map("price_providers")
+  @@schema("price_conversion")
+}
+
+model PriceSetting {
+  id                     Boolean            @id @default(true)
+  revision               BigInt             @default(0)
+  divergenceThresholdBps Int                @default(500) @map("divergence_threshold_bps")
+  updatedAt              DateTime           @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  securityState          PriceSecurityState @default(HEALTHY) @map("security_state")
+
+  @@map("price_settings")
+  @@schema("price_conversion")
+}
+
+model Currency {
+  id                                 String                    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  symbol                             String                    @db.VarChar(32)
+  name                               String                    @db.VarChar(128)
+  decimals                           Int
+  kind                               CurrencyKind
+  pricingStatus                      CurrencyStatus            @map("pricing_status")
+  autoDisabled                       Boolean                   @default(false) @map("auto_disabled")
+  createdAt                          DateTime                  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt                          DateTime                  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  refs                               CurrencyProviderRef[]
+  snapshots                          PriceSnapshot[]
+  viewSnapshots                      PriceViewSnapshot[]
+  viewHealth                         PriceViewProviderHealth[]
+  viewResolutions                    PriceViewResolution[]
+  resolutions                        PriceResolution[]
+  health                             PriceProviderHealth[]
+  notifications                      PriceAdminNotification[]
+
+  @@unique([symbol, kind])
+  @@map("currencies")
+  @@schema("price_conversion")
+}
+
+model CurrencyProviderRef {
+  id         String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  currencyId String        @map("currency_id") @db.Uuid
+  providerId String        @map("provider_id") @db.Uuid
+  externalId String        @map("external_id") @db.VarChar(160)
+  symbol     String        @db.VarChar(64)
+  network    String?       @db.VarChar(64)
+  address    String?       @db.VarChar(160)
+  active     Boolean       @default(true)
+  retiredAt  DateTime?     @map("retired_at") @db.Timestamptz(6)
+  currency   Currency      @relation(fields: [currencyId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  provider   PriceProvider @relation(fields: [providerId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  // Only current references are unique; partial indexes are defined by the forward migration.
+  @@index([providerId], map: "currency_provider_refs_provider_idx")
+  @@map("currency_provider_refs")
+  @@schema("price_conversion")
+}
+
+model PriceSnapshot {
+  id            String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  providerId    String            @map("provider_id") @db.Uuid
+  currencyId    String            @map("currency_id") @db.Uuid
+  priceUsd      Decimal           @map("price_usd") @db.Decimal(38, 18)
+  observedAt    DateTime          @map("observed_at") @db.Timestamptz(6)
+  receivedAt    DateTime?         @map("received_at") @db.Timestamptz(6)
+  assetUpdatedAt DateTime?        @map("asset_updated_at") @db.Timestamptz(6)
+  responseHash  String            @map("response_hash") @db.Char(64)
+  createdAt     DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  provider      PriceProvider     @relation(fields: [providerId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  currency      Currency          @relation(fields: [currencyId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  effectiveFor  PriceResolution[] @relation("EffectiveSnapshot")
+  primaryFor    PriceResolution[] @relation("PrimarySnapshot")
+  comparisonFor PriceResolution[] @relation("ComparisonSnapshot")
+  fallbackFor   PriceResolution[] @relation("FallbackSnapshot")
+
+  @@index([currencyId, providerId, observedAt(sort: Desc)], map: "price_snapshots_currency_provider_observed")
+  @@index([providerId, observedAt(sort: Desc)], map: "price_snapshots_provider_observed_idx")
+  @@index([createdAt(sort: Desc), id(sort: Desc)], map: "price_snapshots_created_cursor")
+  @@map("price_snapshots")
+  @@schema("price_conversion")
+}
+
+model PriceResolution {
+  id                             String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  configRevision                 BigInt                @default(dbgenerated("current_price_config_revision()")) @map("config_revision")
+  currencyId                     String                @map("currency_id") @db.Uuid
+  effectiveProviderId            String?               @map("effective_provider_id") @db.Uuid
+  effectiveSnapshotId            String?               @map("effective_snapshot_id") @db.Uuid
+  effectivePriceUsd              Decimal?              @map("effective_price_usd") @db.Decimal(38, 18)
+  observedAt                     DateTime?             @map("observed_at") @db.Timestamptz(6)
+  primarySnapshotId              String?               @map("primary_snapshot_id") @db.Uuid
+  comparisonSnapshotId           String?               @map("comparison_snapshot_id") @db.Uuid
+  fallbackSnapshotId             String?               @map("fallback_snapshot_id") @db.Uuid
+  differenceBps                  Decimal?              @map("difference_bps") @db.Decimal(38, 18)
+  configuredPrimaryProviderId    String?               @map("configured_primary_provider_id") @db.Uuid
+  configuredComparisonProviderId String?               @map("configured_comparison_provider_id") @db.Uuid
+  configuredFallbackProviderId   String?               @map("configured_fallback_provider_id") @db.Uuid
+  primaryPriceUsd                Decimal?              @map("primary_price_usd") @db.Decimal(38, 18)
+  comparisonPriceUsd             Decimal?              @map("comparison_price_usd") @db.Decimal(38, 18)
+  fallbackPriceUsd               Decimal?              @map("fallback_price_usd") @db.Decimal(38, 18)
+  absoluteDifferenceUsd          Decimal?              @map("absolute_difference_usd") @db.Decimal(38, 18)
+  differenceNumerator            Decimal?              @map("difference_numerator") @db.Decimal(78, 0)
+  differenceDenominator          Decimal?              @map("difference_denominator") @db.Decimal(78, 0)
+  reason                         PriceResolutionReason
+  stale                          Boolean               @default(false)
+  createdAt                      DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
+  currency                       Currency              @relation(fields: [currencyId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  effectiveProvider              PriceProvider?        @relation("EffectiveProvider", fields: [effectiveProviderId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  effectiveSnapshot              PriceSnapshot?        @relation("EffectiveSnapshot", fields: [effectiveSnapshotId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  primarySnapshot                PriceSnapshot?        @relation("PrimarySnapshot", fields: [primarySnapshotId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "price_resolutions_primary_snapshot_fkey")
+  comparisonSnapshot             PriceSnapshot?        @relation("ComparisonSnapshot", fields: [comparisonSnapshotId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "price_resolutions_comparison_snapshot_fkey")
+  fallbackSnapshot               PriceSnapshot?        @relation("FallbackSnapshot", fields: [fallbackSnapshotId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "price_resolutions_fallback_snapshot_fkey")
+  configuredPrimaryProvider      PriceProvider?        @relation("ConfiguredPrimaryProvider", fields: [configuredPrimaryProviderId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  configuredComparisonProvider   PriceProvider?        @relation("ConfiguredComparisonProvider", fields: [configuredComparisonProviderId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  configuredFallbackProvider     PriceProvider?        @relation("ConfiguredFallbackProvider", fields: [configuredFallbackProviderId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  viewResolutions                PriceViewResolution[]
+
+  @@index([currencyId, createdAt(sort: Desc), id(sort: Desc)], map: "price_resolutions_currency_created")
+  @@index([createdAt(sort: Desc), id(sort: Desc)], map: "price_resolutions_created_cursor")
+  @@index([effectiveProviderId], map: "price_resolutions_effective_provider_idx")
+  @@index([effectiveSnapshotId], map: "price_resolutions_effective_snapshot_idx")
+  @@index([primarySnapshotId], map: "price_resolutions_primary_snapshot_idx")
+  @@index([comparisonSnapshotId], map: "price_resolutions_comparison_snapshot_idx")
+  @@index([fallbackSnapshotId], map: "price_resolutions_fallback_snapshot_idx")
+  @@index([configuredPrimaryProviderId], map: "price_resolutions_configured_primary_idx")
+  @@index([configuredComparisonProviderId], map: "price_resolutions_configured_comparison_idx")
+  @@index([configuredFallbackProviderId], map: "price_resolutions_configured_fallback_idx")
+  @@index([currencyId, configRevision, createdAt(sort: Desc), id(sort: Desc)], map: "price_resolutions_currency_revision_created")
+  @@map("price_resolutions")
+  @@schema("price_conversion")
+}
+
+model PriceFetchRun {
+  id               String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  providerId       String              @map("provider_id") @db.Uuid
+  scheduledFor     DateTime            @map("scheduled_for") @db.Timestamptz(6)
+  status           PriceFetchRunStatus
+  requestedCount   Int                 @default(0) @map("requested_count")
+  observedCount    Int                 @default(0) @map("observed_count")
+  latencyMs        Int?                @map("latency_ms")
+  safeErrorCode    String?             @map("safe_error_code") @db.VarChar(64)
+  workerInstanceId String              @map("worker_instance_id") @db.VarChar(128)
+  createdAt        DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  startedAt        DateTime?           @map("started_at") @db.Timestamptz(6)
+  finishedAt       DateTime?           @map("finished_at") @db.Timestamptz(6)
+  attemptCount     Int                 @default(1) @map("attempt_count")
+  nextRetryAt      DateTime?           @map("next_retry_at") @db.Timestamptz(6)
+  provider         PriceProvider       @relation(fields: [providerId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([providerId, scheduledFor])
+  @@index([providerId, createdAt(sort: Desc), id(sort: Desc)], map: "price_fetch_runs_provider_created")
+  @@index([createdAt(sort: Desc), id(sort: Desc)], map: "price_fetch_runs_created_cursor")
+  @@index([status, nextRetryAt], map: "price_fetch_runs_status_retry_idx")
+  @@map("price_fetch_runs")
+  @@schema("price_conversion")
+}
+
+model PriceViewFetchBucket {
+  providerId   String        @map("provider_id") @db.Uuid
+  scheduledFor DateTime      @map("scheduled_for") @db.Timestamptz(6)
+  createdAt    DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  provider     PriceProvider @relation(fields: [providerId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@id([providerId, scheduledFor])
+  @@map("price_view_fetch_buckets")
+  @@schema("price_conversion")
+}
+
+model PriceProviderHealth {
+  providerId          String        @map("provider_id") @db.Uuid
+  currencyId          String        @map("currency_id") @db.Uuid
+  healthy             Boolean
+  consecutiveFailures Int           @default(0) @map("consecutive_failures")
+  safeErrorCode       String?       @map("safe_error_code") @db.VarChar(64)
+  lastSuccessAt       DateTime?     @map("last_success_at") @db.Timestamptz(6)
+  lastErrorAt         DateTime?     @map("last_error_at") @db.Timestamptz(6)
+  lastObservedAt      DateTime?     @map("last_observed_at") @db.Timestamptz(6)
+  updatedAt           DateTime      @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  provider            PriceProvider @relation(fields: [providerId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  currency            Currency      @relation(fields: [currencyId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@id([providerId, currencyId])
+  @@index([currencyId], map: "price_provider_health_currency_idx")
+  @@map("price_provider_health")
+  @@schema("price_conversion")
+}
+
+model PriceProviderCallStat {
+  providerId   String           @map("provider_id") @db.Uuid
+  periodType   PriceUsagePeriod @map("period_type")
+  periodStart  DateTime         @map("period_start") @db.Date
+  requestCount Int              @default(0) @map("request_count")
+  updatedAt    DateTime         @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  provider     PriceProvider    @relation(fields: [providerId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@id([providerId, periodType, periodStart])
+  @@index([periodType, periodStart(sort: Desc)], map: "price_provider_call_stats_period_idx")
+  @@map("price_provider_call_stats")
+  @@schema("price_conversion")
+}
+
+model PriceViewFiat {
+  code      String              @id @db.VarChar(3)
+  enabled   Boolean             @default(true)
+  createdAt DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  snapshots PriceViewSnapshot[]
+
+  @@map("price_view_fiats")
+  @@schema("price_conversion")
+}
+
+model PriceViewSnapshot {
+  id           String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  providerId   String        @map("provider_id") @db.Uuid
+  currencyId   String        @map("currency_id") @db.Uuid
+  fiatCode     String        @map("fiat_code") @db.VarChar(3)
+  price        Decimal       @db.Decimal(38, 18)
+  observedAt   DateTime      @map("observed_at") @db.Timestamptz(6)
+  receivedAt   DateTime?     @map("received_at") @db.Timestamptz(6)
+  assetUpdatedAt DateTime?   @map("asset_updated_at") @db.Timestamptz(6)
+  responseHash String        @map("response_hash") @db.Char(64)
+  createdAt    DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  provider     PriceProvider @relation(fields: [providerId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  currency     Currency      @relation(fields: [currencyId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  fiat         PriceViewFiat @relation(fields: [fiatCode], references: [code], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([currencyId, fiatCode, providerId, observedAt(sort: Desc), id(sort: Desc)], map: "price_view_snapshots_lookup")
+  @@index([providerId, observedAt(sort: Desc)], map: "price_view_snapshots_provider_observed")
+  @@index([createdAt(sort: Desc), id(sort: Desc)], map: "price_view_snapshots_created_cursor")
+  @@map("price_view_snapshots")
+  @@schema("price_conversion")
+}
+
+model PriceViewResolution {
+  id                    String                    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  currencyId            String                    @map("currency_id") @db.Uuid
+  selectedProviderId    String?                   @map("selected_provider_id") @db.Uuid
+  configuredProviderId  String                    @map("configured_provider_id") @db.Uuid
+  secondaryProviderId   String?                   @map("secondary_provider_id") @db.Uuid
+  sensitiveResolutionId String?                   @map("sensitive_resolution_id") @db.Uuid
+  reason                PriceViewResolutionReason
+  status                PriceViewResolutionStatus
+  safeErrorCode         String?                   @map("safe_error_code") @db.VarChar(64)
+  createdAt             DateTime                  @default(now()) @map("created_at") @db.Timestamptz(6)
+  currency              Currency                  @relation(fields: [currencyId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  selectedProvider      PriceProvider?            @relation("SelectedViewProvider", fields: [selectedProviderId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  configuredProvider    PriceProvider             @relation("ConfiguredViewProvider", fields: [configuredProviderId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  secondaryProvider     PriceProvider?            @relation("SecondaryViewProvider", fields: [secondaryProviderId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  sensitiveResolution   PriceResolution?          @relation(fields: [sensitiveResolutionId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([currencyId, createdAt(sort: Desc), id(sort: Desc)], map: "price_view_resolutions_currency_created")
+  @@index([selectedProviderId, createdAt(sort: Desc)], map: "price_view_resolutions_selected_provider_created")
+  @@index([status, createdAt(sort: Desc)], map: "price_view_resolutions_status_created")
+  @@index([createdAt(sort: Desc), id(sort: Desc)], map: "price_view_resolutions_created_cursor")
+  @@map("price_view_resolutions")
+  @@schema("price_conversion")
+}
+
+model PriceAdminNotification {
+  id             String                     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  type           PriceNotificationType
+  providerId     String?                    @map("provider_id") @db.Uuid
+  currencyId     String?                    @map("currency_id") @db.Uuid
+  dedupeKey      String                     @unique @map("dedupe_key") @db.VarChar(255)
+  payload        Json                       @default("{}") @db.JsonB
+  deliveryStatus NotificationDeliveryStatus @default(PENDING) @map("delivery_status")
+  attemptCount   Int                        @default(0) @map("attempt_count")
+  nextAttemptAt  DateTime?                  @map("next_attempt_at") @db.Timestamptz(6)
+  safeErrorCode  String?                    @map("safe_error_code") @db.VarChar(64)
+  claimedAt      DateTime?                  @map("claimed_at") @db.Timestamptz(6)
+  claimedBy      String?                    @map("claimed_by") @db.VarChar(128)
+  maxAttempts    Int                        @default(5) @map("max_attempts")
+  claimToken     String?                    @map("claim_token") @db.Uuid
+  createdAt      DateTime                   @default(now()) @map("created_at") @db.Timestamptz(6)
+  deliveredAt    DateTime?                  @map("delivered_at") @db.Timestamptz(6)
+  provider       PriceProvider?             @relation(fields: [providerId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  currency       Currency?                  @relation(fields: [currencyId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  dlq            PriceNotificationDlq?
+
+  @@index([createdAt(sort: Desc), id(sort: Desc)], map: "price_admin_notifications_cursor")
+  @@index([deliveryStatus, createdAt], map: "price_admin_notifications_pending_idx")
+  @@index([providerId, createdAt(sort: Desc)], map: "price_admin_notifications_provider_idx")
+  @@index([currencyId, createdAt(sort: Desc)], map: "price_admin_notifications_currency_idx")
+  @@index([deliveryStatus, nextAttemptAt, createdAt], map: "price_admin_notifications_retry_idx")
+  @@map("price_admin_notifications")
+  @@schema("price_conversion")
+}
+
+model PriceNotificationDlq {
+  id               String                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  notificationId   String                 @unique @map("notification_id") @db.Uuid
+  notificationType PriceNotificationType  @map("notification_type")
+  attempts         Int
+  safeErrorCode    String                 @map("safe_error_code") @db.VarChar(64)
+  payload          Json                   @default("{}") @db.JsonB
+  createdAt        DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
+  notification     PriceAdminNotification @relation(fields: [notificationId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([createdAt(sort: Desc), id(sort: Desc)], map: "price_notification_dlq_created_cursor")
+  @@map("price_notification_dlq")
+  @@schema("price_conversion")
+}
+
+model PriceViewProviderHealth {
+  providerId          String        @map("provider_id") @db.Uuid
+  currencyId          String        @map("currency_id") @db.Uuid
+  healthy             Boolean
+  consecutiveFailures Int           @default(0) @map("consecutive_failures")
+  safeErrorCode       String?       @map("safe_error_code") @db.VarChar(64)
+  lastSuccessAt       DateTime?     @map("last_success_at") @db.Timestamptz(6)
+  lastErrorAt         DateTime?     @map("last_error_at") @db.Timestamptz(6)
+  updatedAt           DateTime      @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  provider            PriceProvider @relation(fields: [providerId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  currency            Currency      @relation(fields: [currencyId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@id([providerId, currencyId])
+  @@index([currencyId], map: "price_view_provider_health_currency_idx")
+  @@map("price_view_provider_health")
+  @@schema("price_conversion")
+}
+
+model PriceAdminAudit {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  actorId    String?  @map("actor_id") @db.Uuid
+  sessionId  String?  @map("session_id") @db.VarChar(128)
+  requestId  String?  @map("request_id") @db.Uuid
+  ipAddress  String?  @map("ip_address") @db.Inet
+  deviceId   String?  @map("device_id") @db.VarChar(128)
+  action     String   @db.VarChar(64)
+  reason     String   @db.VarChar(500)
+  beforeJson Json     @default("{}") @map("before_json") @db.JsonB
+  afterJson  Json     @default("{}") @map("after_json") @db.JsonB
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([createdAt(sort: Desc), id(sort: Desc)], map: "price_admin_audit_created")
+  @@map("price_admin_audit")
+  @@schema("price_conversion")
+}
+
+model PriceConfigChange {
+  id          String                  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  revision    BigInt                  @unique
+  status      PriceConfigChangeStatus @default(DRAFT)
+  effectiveAt DateTime?               @map("effective_at") @db.Timestamptz(6)
+  changelog   String                  @db.VarChar(1000)
+  actorId     String?                 @map("actor_id") @db.Uuid
+  config      Json                    @default("{}") @db.JsonB
+  scopeKey    String                  @default("GLOBAL") @map("scope_key") @db.VarChar(160)
+  createdAt   DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
+  appliedAt   DateTime?               @map("applied_at") @db.Timestamptz(6)
+
+  @@index([createdAt(sort: Desc), id(sort: Desc)], map: "price_config_changes_created_cursor")
+  @@map("price_config_changes")
+  @@schema("price_conversion")
+}

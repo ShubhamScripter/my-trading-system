@@ -1,0 +1,18 @@
+name: orebit-wallet-core-test
+
+services:
+  postgres:
+    image: postgres:17.6-alpine
+    container_name: orebit-wallet-core-postgres-test
+    command: ["postgres", "-c", "cluster_name=orebit_wallet_core_test"]
+    environment:
+      POSTGRES_DB: orebit_wallet_core_test
+      POSTGRES_USER: orebit_wallet_core_test_owner
+      POSTGRES_PASSWORD: local_wallet_core_test_only
+    ports:
+      - "127.0.0.1:55435:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U orebit_wallet_core_test_owner -d orebit_wallet_core_test"]
+      interval: 1s
+      timeout: 5s
+      retries: 30

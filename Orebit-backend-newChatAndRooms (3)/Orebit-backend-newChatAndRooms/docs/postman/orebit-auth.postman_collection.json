@@ -1,0 +1,2387 @@
+{
+  "info": {
+    "_postman_id": "8f3b1c62-4d0a-4a1e-9f77-0b5c2e7a91d4",
+    "name": "Orebit — Auth & Settings",
+    "description": "The Orebit identity surface: registration, login, sessions, two-factor, and the security settings a signed-in user controls — including the Payment PIN.\n\n─── How to use it ───\n\n1. Set `baseUrl` (defaults to http://localhost:3000).\n2. Sign in with `2. Login — POST /auth/login — password`. Its test script stores `accessToken` and `csrfToken` for you; every authenticated request inherits the bearer token from the collection.\n3. Refresh and device cookies are set by the server and replayed by Postman automatically — do not send them by hand.\n\n─── Multi-action routes ───\n\nSeveral endpoints take a discriminated union (`step`, `mode`, `action`, `method`). Those appear once per action, named `METHOD /path — action`, because one request with ten mutually exclusive bodies squashed together would be worse than nothing.\n\nLabels are owned by `docs/postman/generate.ts`; bodies are curated here. `tests/auth/openapi.drift.spec.ts` fails if a live route has no request.\n\n─── Security cooldown after an email change ───\n\nFor 24 hours after the account's email address changes, these are frozen and answer `security_change_cooldown` (403) with a `Retry-After` header and `extra.availableAt`:\n\n- folder 4 — `set` and `change` password\n- folder 8 — `totp-add`, `totp-confirm`, `passkey-add-challenge`, `passkey-add-verify`, `recovery-regenerate`\n- folder 10 — both factor surfaces, enable and disable\n- folder 11 — the Payment PIN: enable, verify, update, disable\n\nIt stops an attacker who reaches an email change from taking the password, enrolling their own factor (collecting the account's first recovery codes on the way) and setting a PIN in the same minute. It is account state in one Postgres column, so logging out, signing in again or switching device does not clear it, and the check lives on the service method — switching from `/settings/security/*` to `/auth/2fa` reaches the same guard.\n\nFolder 12 is deliberately exempt: email RECOVERY must work while the account is frozen, because that is the mechanism for undoing a change the owner did not make. The cooldown is 24 hours and is independent of the 30-day retained-address window — the two answer different questions.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{accessToken}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3000",
+      "type": "string"
+    },
+    {
+      "key": "accessToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "csrfToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "captchaToken",
+      "value": "test-captcha-token",
+      "type": "string"
+    },
+    {
+      "key": "email",
+      "value": "ada.lovelace@example.test",
+      "type": "string"
+    },
+    {
+      "key": "password",
+      "value": "correct-horse-battery-staple-9",
+      "type": "string"
+    },
+    {
+      "key": "emailCode",
+      "value": "",
+      "type": "string",
+      "description": "From POST /auth/2fa {\"action\":\"credential-otp\"}."
+    },
+    {
+      "key": "totpCode",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "mfaToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "currentPin",
+      "value": "483920",
+      "type": "string"
+    },
+    {
+      "key": "newPin",
+      "value": "271828",
+      "type": "string"
+    },
+    {
+      "key": "paymentPinChallengeId",
+      "value": "",
+      "type": "string",
+      "description": "Captured by the Payment PIN verify requests. Single-use."
+    },
+    {
+      "key": "newEmail",
+      "value": "new.address@example.test",
+      "type": "string",
+      "description": "The address to move to."
+    },
+    {
+      "key": "emailMethod",
+      "value": "none",
+      "type": "string",
+      "description": "One of change.securityMethods from the GET."
+    },
+    {
+      "key": "emailChangeId",
+      "value": "",
+      "type": "string",
+      "description": "Captured by \"start\"."
+    },
+    {
+      "key": "currentEmailCode",
+      "value": "",
+      "type": "string",
+      "description": "Code sent to the address held now."
+    },
+    {
+      "key": "newEmailCode",
+      "value": "",
+      "type": "string",
+      "description": "Code sent to the address being claimed."
+    },
+    {
+      "key": "retainedEmailCode",
+      "value": "",
+      "type": "string",
+      "description": "Code sent to a previous address still on hold."
+    },
+    {
+      "key": "emailRecoveryToken",
+      "value": "",
+      "type": "string",
+      "description": "From the \"did you do this?\" email. No session needed."
+    },
+    {
+      "key": "emailRecoveryId",
+      "value": "",
+      "type": "string",
+      "description": "Captured by \"recover-start\"."
+    }
+  ],
+  "item": [
+    {
+      "name": "1. Registration — POST /auth/register",
+      "item": [
+        {
+          "name": "POST /auth/register — start",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/register",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "register"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"step\": \"start\",\n  \"email\": \"{{email}}\",\n  \"captchaProvider\": \"TURNSTILE\",\n  \"captchaToken\": \"{{captchaToken}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "POST /auth/register — resend-otp",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/register",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "register"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"step\": \"resend-otp\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "POST /auth/register — verify-email",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/register",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "register"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"step\": \"verify-email\",\n  \"code\": \"123456\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "POST /auth/register — check-referral",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/register",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "register"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"step\": \"check-referral\",\n  \"code\": \"K7M2P9QR\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "POST /auth/register — credentials",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/register",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "register"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"step\": \"credentials\",\n  \"skip\": false,\n  \"password\": \"{{password}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "POST /auth/register — country",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/register",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "register"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"step\": \"country\",\n  \"country\": \"GB\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "POST /auth/register — state",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/register",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "register"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"step\": \"state\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. Login — POST /auth/login",
+      "item": [
+        {
+          "name": "POST /auth/login — password",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"mode\": \"password\",\n  \"identifier\": \"{{email}}\",\n  \"password\": \"{{password}}\",\n  \"captchaProvider\": \"TURNSTILE\",\n  \"captchaToken\": \"{{captchaToken}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Stores `accessToken` and `csrfToken` on success. A `mfa_required` outcome stores `mfaToken` instead — finish it with POST /auth/2fa/verify."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "const data = body.data || {};",
+                  "if (data.accessToken) { pm.collectionVariables.set('accessToken', data.accessToken); }",
+                  "if (data.csrfToken) { pm.collectionVariables.set('csrfToken', data.csrfToken); }",
+                  "if (data.mfaToken) { pm.collectionVariables.set('mfaToken', data.mfaToken); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /auth/login — otp-request",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"mode\": \"otp-request\",\n  \"identifier\": \"{{email}}\",\n  \"captchaProvider\": \"TURNSTILE\",\n  \"captchaToken\": \"{{captchaToken}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "POST /auth/login — otp-verify",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"mode\": \"otp-verify\",\n  \"identifier\": \"{{email}}\",\n  \"code\": \"123456\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "POST /auth/login — oauth-start",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"mode\": \"oauth-start\",\n  \"provider\": \"GOOGLE\",\n  \"redirectUri\": \"https://app.example.test/oauth/callback\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "POST /auth/login — oauth-callback",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"mode\": \"oauth-callback\",\n  \"provider\": \"GOOGLE\",\n  \"code\": \"provider-authorization-code\",\n  \"state\": \"state-from-oauth-start\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "POST /auth/login — oauth-register",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"mode\": \"oauth-register\",\n  \"linkToken\": \"link-token-from-callback\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3. Session — POST /auth/session",
+      "item": [
+        {
+          "name": "GET /auth/session",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/auth/session"
+          }
+        },
+        {
+          "name": "POST /auth/session — logout",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Orebit-Csrf",
+                "value": "{{csrfToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/session",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "session"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"logout\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "POST /auth/session — logout-all",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Orebit-Csrf",
+                "value": "{{csrfToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/session",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "session"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"logout-all\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "POST /auth/session — revoke-session",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/auth/session"
+          }
+        }
+      ]
+    },
+    {
+      "name": "4. Password — POST /auth/password",
+      "item": [
+        {
+          "name": "POST /auth/password — request-code",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/password",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "password"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"request-code\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Mails a code for the `set` action below. **Authenticated** — the account is already known, so there is no enumeration question and no captcha.\n\nDeliberately NOT blocked by the security cooldown, so a frozen user can still get a code and have it waiting. The code cannot be spent until the window closes — `set` is what refuses."
+          }
+        },
+        {
+          "name": "POST /auth/password — set",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/password",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "password"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"set\",\n  \"code\": \"123456\",\n  \"password\": \"{{password}}\",\n  \"confirmPassword\": \"{{password}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Set a password by proving the MAILBOX rather than the old password. Serves two populations that look different to a user and identical here: an account created through a provider that never had a password, and one whose owner has forgotten it.\n\nGet the code from `request-code` above.\n\nRefused with `security_change_cooldown` (403) while the account is inside the security cooldown — the 24 hours after its email address changes. The response carries a `Retry-After` header and `extra.availableAt`, so the client renders a deadline rather than a dead end. See the collection description."
+          }
+        },
+        {
+          "name": "POST /auth/password — change",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/password",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "password"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"change\",\n  \"currentPassword\": \"{{password}}\",\n  \"password\": \"{{password}}\",\n  \"confirmPassword\": \"{{password}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Change a password by proving the current one. No emailed code is accepted here, deliberately: offering two proofs for one action means the weaker of them is the only one that matters, and the whole value of asking for the current password is that a mailbox alone cannot supply it.\n\nA wrong `currentPassword` counts toward the durable lockout exactly as it does at sign-in. Both paths revoke every OTHER session and keep this one.\n\nRefused with `security_change_cooldown` (403) while the account is inside the security cooldown — the 24 hours after its email address changes. The response carries a `Retry-After` header and `extra.availableAt`, so the client renders a deadline rather than a dead end. See the collection description."
+          }
+        }
+      ]
+    },
+    {
+      "name": "5. Devices & profile",
+      "item": [
+        {
+          "name": "GET /auth/me",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/auth/me",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "me"
+              ]
+            }
+          }
+        },
+        {
+          "name": "PATCH /auth/me",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/me",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "me"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"country\": \"GB\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "POST /auth/device — trust",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/device",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "device"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"trust\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "POST /auth/device — untrust",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/device",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "device"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"untrust\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "GET /auth/captcha",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/auth/captcha",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "captcha"
+              ]
+            },
+            "description": "Public. Which captcha providers are live right now."
+          }
+        }
+      ]
+    },
+    {
+      "name": "8. Two-factor — /auth/2fa",
+      "item": [
+        {
+          "name": "GET /auth/2fa",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/auth/2fa",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "2fa"
+              ]
+            },
+            "description": "The account's enrolled factors."
+          }
+        },
+        {
+          "name": "POST /auth/2fa — credential-otp",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/2fa",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "2fa"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"credential-otp\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Emails the code that every credential change requires — including every Payment PIN operation. Send the six digits back as `emailCode`."
+          }
+        },
+        {
+          "name": "POST /auth/2fa — reauth-challenge",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/2fa",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "2fa"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"reauth-challenge\",\n  \"intent\": \"account.mfa.remove\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "WebAuthn assertion options. Also the first leg of any PASSKEY proof elsewhere, including POST /settings/security/payment-pin/verify {\"method\":\"passkey\"}."
+          }
+        },
+        {
+          "name": "POST /auth/2fa — reauth-verify",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/2fa",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "2fa"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"reauth-verify\",\n  \"intent\": \"account.mfa.enroll\",\n  \"totpCode\": \"{{totpCode}}\",\n  \"emailCode\": \"{{emailCode}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const data = (pm.response.json() || {}).data || {};",
+                  "if (data.ticket) { pm.collectionVariables.set('elevationTicket', data.ticket); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /auth/2fa — totp-add",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-elevation-ticket",
+                "value": "{{elevationTicket}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/2fa",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "2fa"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"totp-add\",\n  \"label\": \"Authenticator\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Refused with `security_change_cooldown` (403) while the account is inside the security cooldown — the 24 hours after its email address changes. The response carries a `Retry-After` header and `extra.availableAt`, so the client renders a deadline rather than a dead end. See the collection description."
+          }
+        },
+        {
+          "name": "POST /auth/2fa — totp-confirm",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/2fa",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "2fa"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"totp-confirm\",\n  \"code\": \"{{totpCode}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Refused with `security_change_cooldown` (403) while the account is inside the security cooldown — the 24 hours after its email address changes. The response carries a `Retry-After` header and `extra.availableAt`, so the client renders a deadline rather than a dead end. See the collection description."
+          }
+        },
+        {
+          "name": "POST /auth/2fa — passkey-add-challenge",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-elevation-ticket",
+                "value": "{{elevationTicket}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/2fa",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "2fa"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"passkey-add-challenge\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Refused with `security_change_cooldown` (403) while the account is inside the security cooldown — the 24 hours after its email address changes. The response carries a `Retry-After` header and `extra.availableAt`, so the client renders a deadline rather than a dead end. See the collection description."
+          }
+        },
+        {
+          "name": "POST /auth/2fa — passkey-add-verify",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/2fa",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "2fa"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"passkey-add-verify\",\n  \"label\": \"Passkey\",\n  \"passkey\": {\n    \"id\": \"credential-id\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Refused with `security_change_cooldown` (403) while the account is inside the security cooldown — the 24 hours after its email address changes. The response carries a `Retry-After` header and `extra.availableAt`, so the client renders a deadline rather than a dead end. See the collection description."
+          }
+        },
+        {
+          "name": "POST /auth/2fa — recovery-regenerate",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-elevation-ticket",
+                "value": "{{elevationTicket}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/2fa",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "2fa"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"recovery-regenerate\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Refused with `security_change_cooldown` (403) while the account is inside the security cooldown — the 24 hours after its email address changes. The response carries a `Retry-After` header and `extra.availableAt`, so the client renders a deadline rather than a dead end. See the collection description."
+          }
+        },
+        {
+          "name": "POST /auth/2fa — rename",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-elevation-ticket",
+                "value": "{{elevationTicket}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/2fa",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "2fa"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"rename\",\n  \"kind\": \"PASSKEY\",\n  \"id\": \"factor-id\",\n  \"label\": \"Work laptop\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "POST /auth/2fa/verify",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/2fa/verify",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "2fa",
+                "verify"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"mfaToken\": \"{{mfaToken}}\",\n  \"method\": \"totp\",\n  \"code\": \"{{totpCode}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Public — the caller is mid-sign-in and has no access token yet."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const data = (pm.response.json() || {}).data || {};",
+                  "if (data.accessToken) { pm.collectionVariables.set('accessToken', data.accessToken); }",
+                  "if (data.csrfToken) { pm.collectionVariables.set('csrfToken', data.csrfToken); }"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "9. Auth endpoints",
+      "item": [
+        {
+          "name": "GET /auth/sessions",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/auth/sessions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "sessions"
+              ]
+            }
+          }
+        },
+        {
+          "name": "POST /auth/link/preview",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/link/preview",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "link",
+                "preview"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"linkToken\": \"link-token-from-oauth-callback\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "POST /auth/link",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/link",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "link"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"linkToken\": \"link-token-from-oauth-callback\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "10. Settings — /settings",
+      "item": [
+        {
+          "name": "GET /settings/security/passkeys",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/settings/security/passkeys",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "settings",
+                "security",
+                "passkeys"
+              ]
+            }
+          }
+        },
+        {
+          "name": "POST /settings/security/passkeys — enable-challenge",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/settings/security/passkeys",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "settings",
+                "security",
+                "passkeys"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"enable-challenge\",\n  \"emailCode\": \"{{emailCode}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Refused with `security_change_cooldown` (403) while the account is inside the security cooldown — the 24 hours after its email address changes. The response carries a `Retry-After` header and `extra.availableAt`, so the client renders a deadline rather than a dead end. See the collection description.\n\nSwitching to `POST /auth/2fa` with `action: passkey-add-challenge` does NOT lift the freeze: both routes reach the same service method, and the check lives on the method."
+          }
+        },
+        {
+          "name": "POST /settings/security/passkeys — enable-verify",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/settings/security/passkeys",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "settings",
+                "security",
+                "passkeys"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"enable-verify\",\n  \"passkey\": {\n    \"id\": \"credential-id\"\n  },\n  \"label\": \"Passkey\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Refused with `security_change_cooldown` (403) while the account is inside the security cooldown — the 24 hours after its email address changes. The response carries a `Retry-After` header and `extra.availableAt`, so the client renders a deadline rather than a dead end. See the collection description."
+          }
+        },
+        {
+          "name": "POST /settings/security/passkeys/disable",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/settings/security/passkeys/disable",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "settings",
+                "security",
+                "passkeys",
+                "disable"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"totpCode\": \"{{totpCode}}\",\n  \"emailCode\": \"{{emailCode}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Exactly ONE of `passkey`, `totpCode`, `backupCode` or `kyc`. All but `backupCode` also need `emailCode`. Sending two is refused as ambiguous.\n\nRefused with `security_change_cooldown` (403) while the account is inside the security cooldown — the 24 hours after its email address changes. The response carries a `Retry-After` header and `extra.availableAt`, so the client renders a deadline rather than a dead end. See the collection description."
+          }
+        },
+        {
+          "name": "GET /settings/security/authenticator",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/settings/security/authenticator",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "settings",
+                "security",
+                "authenticator"
+              ]
+            }
+          }
+        },
+        {
+          "name": "POST /settings/security/authenticator — enable-challenge",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/settings/security/authenticator",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "settings",
+                "security",
+                "authenticator"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"enable-challenge\",\n  \"emailCode\": \"{{emailCode}}\",\n  \"label\": \"Authenticator\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Refused with `security_change_cooldown` (403) while the account is inside the security cooldown — the 24 hours after its email address changes. The response carries a `Retry-After` header and `extra.availableAt`, so the client renders a deadline rather than a dead end. See the collection description.\n\nSwitching to `POST /auth/2fa` with `action: totp-add` does NOT lift the freeze: both routes reach the same service method, and the check lives on the method."
+          }
+        },
+        {
+          "name": "POST /settings/security/authenticator — enable-verify",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/settings/security/authenticator",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "settings",
+                "security",
+                "authenticator"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"enable-verify\",\n  \"totpCode\": \"{{totpCode}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Refused with `security_change_cooldown` (403) while the account is inside the security cooldown — the 24 hours after its email address changes. The response carries a `Retry-After` header and `extra.availableAt`, so the client renders a deadline rather than a dead end. See the collection description."
+          }
+        },
+        {
+          "name": "POST /settings/security/authenticator/disable",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/settings/security/authenticator/disable",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "settings",
+                "security",
+                "authenticator",
+                "disable"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"totpCode\": \"{{totpCode}}\",\n  \"emailCode\": \"{{emailCode}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Refused with `security_change_cooldown` (403) while the account is inside the security cooldown — the 24 hours after its email address changes. The response carries a `Retry-After` header and `extra.availableAt`, so the client renders a deadline rather than a dead end. See the collection description."
+          }
+        }
+      ]
+    },
+    {
+      "name": "11. Payment PIN — /settings/security/payment-pin",
+      "description": "A six-digit secret that authorises payments. Three endpoints, and the mental model is: GET status → VERIFY when required → ACTION.\n\n─── Enable ───\n  GET status (needs `canEnable`)\n  → POST /auth/2fa {\"action\":\"credential-otp\"}\n  → POST /settings/security/payment-pin {\"action\":\"enable\"}\n\n─── Update / Disable ───\n  GET status → pick one of `update.methods`\n  → POST /auth/2fa {\"action\":\"credential-otp\"}\n  → POST /settings/security/payment-pin/verify   (stores `paymentPinChallengeId`)\n  → POST /settings/security/payment-pin {\"action\":\"update\"|\"disable\"}\n\nThe challenge is single-use and bound to your account, your login, and the ONE operation it was verified for: a challenge verified for `update` cannot disable the PIN, and vice versa. It expires after five minutes.\n\nFor `method: \"passkey\"`, fetch assertion options first from POST /auth/2fa {\"action\":\"reauth-challenge\"} — inherent to WebAuthn, not a policy step.",
+      "item": [
+        {
+          "name": "GET /settings/security/payment-pin",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/settings/security/payment-pin",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "settings",
+                "security",
+                "payment-pin"
+              ]
+            },
+            "description": "Everything a client needs to render the screen: whether a PIN is set, whether one may be created, which verification methods are open, and how many changes remain in the current window. The frontend never has to work out whether the account has an authenticator or a passkey — that is decided here."
+          }
+        },
+        {
+          "name": "POST /settings/security/payment-pin — enable",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/settings/security/payment-pin",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "settings",
+                "security",
+                "payment-pin"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"enable\",\n  \"pin\": \"{{currentPin}}\",\n  \"emailCode\": \"{{emailCode}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "One request, no challenge: enabling is authorised by the emailed code plus the EXISTENCE of a passkey or authenticator, which the backend checks itself.\n\nRefused with `mfa_method_unavailable` when neither factor is enrolled — the PIN must not become the account's only self-service credential.\n\nThe PIN must be exactly 6 digits and not trivially guessable: `000000`, `123456`, `121212` and the like are refused with `payment_pin_weak`.\n\nRefused with `security_change_cooldown` (403) while the account is inside the security cooldown — the 24 hours after its email address changes. The response carries a `Retry-After` header and `extra.availableAt`, so the client renders a deadline rather than a dead end. See the collection description."
+          }
+        },
+        {
+          "name": "POST /settings/security/payment-pin/verify — pin",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/settings/security/payment-pin/verify",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "settings",
+                "security",
+                "payment-pin",
+                "verify"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"operation\": \"update\",\n  \"method\": \"pin\",\n  \"currentPin\": \"{{currentPin}}\",\n  \"emailCode\": \"{{emailCode}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Set `operation` to `update` or `disable` — the challenge is bound to it and will not work for the other.\n\nSend exactly the proof your declared method names. A request carrying `currentPin` AND `totpCode` is refused as ambiguous rather than resolved in the server's favour.\n\nRefused with `security_change_cooldown` (403) while the account is inside the security cooldown — the 24 hours after its email address changes. The response carries a `Retry-After` header and `extra.availableAt`, so the client renders a deadline rather than a dead end. See the collection description."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const data = (pm.response.json() || {}).data || {};",
+                  "if (data.challengeId) {",
+                  "  pm.collectionVariables.set('paymentPinChallengeId', data.challengeId);",
+                  "  console.log('challenge for ' + data.operation + ' via ' + data.method);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /settings/security/payment-pin/verify — authenticator",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/settings/security/payment-pin/verify",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "settings",
+                "security",
+                "payment-pin",
+                "verify"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"operation\": \"update\",\n  \"method\": \"authenticator\",\n  \"totpCode\": \"{{totpCode}}\",\n  \"emailCode\": \"{{emailCode}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Refused with `security_change_cooldown` (403) while the account is inside the security cooldown — the 24 hours after its email address changes. The response carries a `Retry-After` header and `extra.availableAt`, so the client renders a deadline rather than a dead end. See the collection description."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const data = (pm.response.json() || {}).data || {};",
+                  "if (data.challengeId) { pm.collectionVariables.set('paymentPinChallengeId', data.challengeId); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /settings/security/payment-pin/verify — passkey",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/settings/security/payment-pin/verify",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "settings",
+                "security",
+                "payment-pin",
+                "verify"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"operation\": \"disable\",\n  \"method\": \"passkey\",\n  \"passkey\": {\n    \"id\": \"credential-id\"\n  },\n  \"emailCode\": \"{{emailCode}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Fetch assertion options first from POST /auth/2fa {\"action\":\"reauth-challenge\"}, sign them with the authenticator, and put the result in `passkey`.\n\nRefused with `security_change_cooldown` (403) while the account is inside the security cooldown — the 24 hours after its email address changes. The response carries a `Retry-After` header and `extra.availableAt`, so the client renders a deadline rather than a dead end. See the collection description."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const data = (pm.response.json() || {}).data || {};",
+                  "if (data.challengeId) { pm.collectionVariables.set('paymentPinChallengeId', data.challengeId); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /settings/security/payment-pin — update",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/settings/security/payment-pin",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "settings",
+                "security",
+                "payment-pin"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"update\",\n  \"challengeId\": \"{{paymentPinChallengeId}}\",\n  \"newPin\": \"{{newPin}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Needs a challenge verified for `update`. No `userId`, no `method`, no `currentPin` — the server already knows all three from the verification.\n\nCapped at 3 changes per 24 hours per ACCOUNT, shared across all three verification methods and not reset by signing in again. `remaining` on the GET tells you what is left.\n\nThe new PIN must differ from the current one (`payment_pin_reused`).\n\nRefused with `security_change_cooldown` (403) while the account is inside the security cooldown — the 24 hours after its email address changes. The response carries a `Retry-After` header and `extra.availableAt`, so the client renders a deadline rather than a dead end. See the collection description."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) { pm.collectionVariables.set('paymentPinChallengeId', ''); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /settings/security/payment-pin — disable",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/settings/security/payment-pin",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "settings",
+                "security",
+                "payment-pin"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"disable\",\n  \"challengeId\": \"{{paymentPinChallengeId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Needs a challenge verified for `disable`. The challenge is the whole request.\n\nRemoves the PIN outright — the stored hash is deleted, not retired. Your other sessions are NOT signed out: a Payment PIN never established a session, so there is nothing for a sweep to invalidate. The account owner is emailed.\n\nRefused with `security_change_cooldown` (403) while the account is inside the security cooldown — the 24 hours after its email address changes. The response carries a `Retry-After` header and `extra.availableAt`, so the client renders a deadline rather than a dead end. See the collection description."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) { pm.collectionVariables.set('paymentPinChallengeId', ''); }"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "12. Email — /settings/security/email",
+      "description": "Changing the account's email address, and undoing a change that was not the owner's doing.\n\n─── Change ───\n  GET  /settings/security/email                    → securityMethods, remaining\n  POST /settings/security/email  {action:'start'}  → challengeId + requiredTargets\n  (read the code in EACH mailbox it names)\n  POST /settings/security/email/verify             → address moved\n\nThe tier and the address are fixed at `start` and read from the server's record at completion, so neither can be swapped afterwards. Every session is revoked on success — including this one, so sign in again before using the rest of the collection.\n\n─── Recovery ───\n\nThe released address receives a “did you do this?” message carrying a single-use token. These two requests need NO SESSION: a completed change revokes them all, and the released address cannot sign in, so the person who needs this is exactly the one who cannot authenticate.\n  POST /settings/security/email  {action:'recover-start'}  → code to the old address\n  POST /settings/security/email/verify                     → account restored or redirected\n\nSet `emailRecoveryToken` from the link in that email first. Recovery does not spend a change-budget slot.",
+      "item": [
+        {
+          "name": "GET /settings/security/email",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/settings/security/email",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "settings",
+                "security",
+                "email"
+              ]
+            },
+            "description": "Everything the screen needs: the address (masked), which security tier a change would require, how many changes remain, and whether a previous address is still on hold."
+          }
+        },
+        {
+          "name": "POST /settings/security/email — start",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/settings/security/email",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "settings",
+                "security",
+                "email"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"start\",\n  \"newEmail\": \"{{newEmail}}\",\n  \"method\": \"{{emailMethod}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Set `emailMethod` to one of `change.securityMethods` from the GET. Add \"skipRetainedEmail\": true only when a previous mailbox is unreachable — it needs an authenticator, passkey or KYC, and it expires that retention."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const data = (pm.response.json() || {}).data || {};",
+                  "if (data.challengeId) {",
+                  "  pm.collectionVariables.set('emailChangeId', data.challengeId);",
+                  "  console.log('mailboxes to check: ' + (data.requiredTargets || []).join(', '));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /settings/security/email — resend",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/settings/security/email",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "settings",
+                "security",
+                "email"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"resend\",\n  \"challengeId\": \"{{emailChangeId}}\",\n  \"target\": \"new\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "One mailbox at a time — `current`, `new` or `retained`. Resending everything would invalidate the codes you have already found."
+          }
+        },
+        {
+          "name": "POST /settings/security/email/verify — change",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/settings/security/email/verify",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "settings",
+                "security",
+                "email",
+                "verify"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"challengeId\": \"{{emailChangeId}}\",\n  \"currentEmailCode\": \"{{currentEmailCode}}\",\n  \"newEmailCode\": \"{{newEmailCode}}\",\n  \"method\": \"{{emailMethod}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Add the proof your tier needs: `totpCode`, `passkey`, `kyc`, or `password`. The `none` tier takes none. Add `retainedEmailCode` only when `requiredTargets` included `retained`.\n\nSending two proofs is refused before any comparison runs, and `method` must match the one the change was started with.\n\nOn success this STARTS the security cooldown: `users.email_changed_at` is set in the same transaction that moves the address, and for the next 24 hours the account cannot change its 2FA, recovery codes, Payment PIN or password. Folders 4, 8, 10 and 11 will answer `security_change_cooldown`."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) { pm.collectionVariables.set('emailChangeId', ''); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /settings/security/email — recover-start",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/settings/security/email",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "settings",
+                "security",
+                "email"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"recover-start\",\n  \"recoveryId\": \"{{emailRecoveryToken}}\",\n  \"intent\": \"restore\",\n  \"reportedCompromise\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "NO SESSION REQUIRED. intent \"restore\" puts the account back on the released address. For intent \"replace\" add \"newEmail\" and a code goes to both mailboxes. \"reportedCompromise\" marks it as “this wasn’t me” — same mutation, different notification.\n\nNOT blocked by the security cooldown, and that exemption is the point. A change revokes every session and the released address cannot sign in, so the person who needs recovery is precisely the one who cannot authenticate — and a live retention plus a fresh `email_changed_at` are always present here. Freezing this would close the flow for every legitimate recovery there will ever be.\n\nA `restore` CLEARS the cooldown (the change has been undone, and the owner needs their password and factors back). A `replace` RESTARTS it — the account has moved somewhere new, which is an email change by every meaning the policy has."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const data = (pm.response.json() || {}).data || {};",
+                  "if (data.recoveryId) { pm.collectionVariables.set('emailRecoveryId', data.recoveryId); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /settings/security/email/verify — recovery",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/settings/security/email/verify",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "settings",
+                "security",
+                "email",
+                "verify"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"recoveryId\": \"{{emailRecoveryToken}}\",\n  \"retainedEmailCode\": \"{{retainedEmailCode}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "NO SESSION REQUIRED, and no security factor: the token proves the mailbox. Add `newEmailCode` for a replace; it is refused on a restore.\n\nOn success every session is revoked and the address that had taken over is released outright, with no reservation of its own.\n\nNOT blocked by the security cooldown, and that exemption is the point. A change revokes every session and the released address cannot sign in, so the person who needs recovery is precisely the one who cannot authenticate — and a live retention plus a fresh `email_changed_at` are always present here. Freezing this would close the flow for every legitimate recovery there will ever be.\n\nA `restore` CLEARS the cooldown (the change has been undone, and the owner needs their password and factors back). A `replace` RESTARTS it — the account has moved somewhere new, which is an email change by every meaning the policy has."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) { pm.collectionVariables.set('emailRecoveryId', ''); }"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "13. System",
+      "item": [
+        {
+          "name": "GET /health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/health",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "health"
+              ]
+            },
+            "description": "Public."
+          }
+        },
+        {
+          "name": "GET /readiness",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/readiness",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "readiness"
+              ]
+            },
+            "description": "Public."
+          }
+        }
+      ]
+    },
+    {
+      "name": "13. Username — /settings/profile/username",
+      "item": [
+        {
+          "name": "GET /settings/profile/username",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/settings/profile/username"
+          }
+        },
+        {
+          "name": "GET /settings/profile/username/check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/settings/profile/username/check?username=shubh_dev"
+          }
+        },
+        {
+          "name": "POST /settings/profile/username",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/settings/profile/username"
+          }
+        }
+      ]
+    },
+    {
+      "name": "14. Password — /settings/security/password",
+      "item": [
+        {
+          "name": "GET /settings/security/password",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/settings/security/password"
+          }
+        },
+        {
+          "name": "POST /settings/security/password — set",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/settings/security/password"
+          }
+        },
+        {
+          "name": "POST /settings/security/password — reset",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/settings/security/password"
+          }
+        },
+        {
+          "name": "POST /settings/security/password — forgot (no factor enrolled)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/settings/security/password"
+          }
+        },
+        {
+          "name": "POST /settings/security/password — forgot (passkey or authenticator)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/settings/security/password"
+          }
+        }
+      ]
+    },
+    {
+      "name": "15. Anti-phishing — /settings/security/anti-phishing",
+      "item": [
+        {
+          "name": "GET /settings/security/anti-phishing",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/settings/security/anti-phishing"
+          }
+        },
+        {
+          "name": "POST /settings/security/anti-phishing — set",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/settings/security/anti-phishing"
+          }
+        },
+        {
+          "name": "POST /settings/security/anti-phishing — change (knows the current code)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/settings/security/anti-phishing"
+          }
+        },
+        {
+          "name": "POST /settings/security/anti-phishing — replace (does not know it)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/settings/security/anti-phishing"
+          }
+        }
+      ]
+    },
+    {
+      "name": "16. Social accounts — /settings/security/social-accounts",
+      "item": [
+        {
+          "name": "GET /settings/security/social-accounts",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/settings/security/social-accounts"
+          }
+        },
+        {
+          "name": "POST /settings/security/social-accounts/verify — challenge",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/settings/security/social-accounts/verify"
+          }
+        },
+        {
+          "name": "POST /settings/security/social-accounts/verify — verify",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/settings/security/social-accounts/verify"
+          }
+        },
+        {
+          "name": "POST /settings/security/social-accounts/start",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/settings/security/social-accounts/start"
+          }
+        },
+        {
+          "name": "POST /settings/security/social-accounts/callback",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/settings/security/social-accounts/callback"
+          }
+        },
+        {
+          "name": "POST /settings/security/social-accounts/verify — verify (intent: unlink)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/settings/security/social-accounts/verify"
+          }
+        },
+        {
+          "name": "POST /settings/security/social-accounts/unlink",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/settings/security/social-accounts/unlink"
+          }
+        }
+      ]
+    },
+    {
+      "name": "17. Delete account — /settings/security/delete-account",
+      "item": [
+        {
+          "name": "GET /settings/security/delete-account",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/settings/security/delete-account"
+          }
+        },
+        {
+          "name": "POST /settings/security/delete-account/verify — challenge",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/settings/security/delete-account/verify"
+          }
+        },
+        {
+          "name": "POST /settings/security/delete-account/verify — verify",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/settings/security/delete-account/verify"
+          }
+        },
+        {
+          "name": "POST /settings/security/delete-account",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/settings/security/delete-account"
+          }
+        },
+        {
+          "name": "POST /settings/security/delete-account/reactivate — challenge",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/settings/security/delete-account/reactivate"
+          }
+        },
+        {
+          "name": "POST /settings/security/delete-account/reactivate — verify",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/settings/security/delete-account/reactivate"
+          }
+        }
+      ]
+    }
+  ]
+}

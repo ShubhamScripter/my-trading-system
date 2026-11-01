@@ -1,0 +1,31 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "Node16",
+    "moduleResolution": "Node16",
+    "baseUrl": ".",
+    "paths": {
+      "@nestjs/common": ["node_modules/@nestjs/common"],
+      "@nestjs/core": ["node_modules/@nestjs/core"],
+      "@nestjs/testing": ["node_modules/@nestjs/testing"],
+      "@prisma/client": ["node_modules/@prisma/client"],
+      "@simplewebauthn/server": ["node_modules/@simplewebauthn/server"],
+      "argon2": ["node_modules/argon2"],
+      "ioredis": ["node_modules/ioredis"],
+      "jsonwebtoken": ["node_modules/@types/jsonwebtoken/index.d.ts"],
+      "nodemailer": ["node_modules/@types/nodemailer/index.d.ts"],
+      "pg": ["node_modules/@types/pg/index.d.ts"],
+      "rxjs": ["node_modules/rxjs"],
+      "zod": ["node_modules/zod"],
+      "fastify": ["node_modules/fastify"]
+    },
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "types": ["node", "@fastify/cookie"]
+  },
+  "include": ["./*.ts"]
+}

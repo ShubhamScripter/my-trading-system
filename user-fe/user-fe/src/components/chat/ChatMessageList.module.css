@@ -1,0 +1,14 @@
+/*
+ * Scroll containment for the message list, independent of globals.css.
+ *
+ * The parent is trusted to give this element a definite (non-"auto") height
+ * budget via flexbox — this module only guarantees that whatever height it's
+ * handed, THIS element is the one that scrolls, never its ancestors.
+ */
+.feedScroll {
+  height: 100%;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior-y: contain;
+}

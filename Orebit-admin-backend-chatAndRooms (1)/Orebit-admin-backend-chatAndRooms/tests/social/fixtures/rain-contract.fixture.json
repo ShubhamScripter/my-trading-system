@@ -1,0 +1,81 @@
+{
+  "contractVersion": 4,
+  "note": "Shared by Orebit-User/be and Orebit-Admin/be. Both copies of rain.contract.ts must give these results. Change the contract, this file and both copies together.",
+  "full": {
+    "status": { "overall": "ON", "system": "ON", "user": "MAINTENANCE", "note": "Rains are back at 18:00 UTC" },
+    "system": {
+      "currencies": ["BTC", "eth", "USDT"],
+      "amountUsd": { "min": "5", "max": "50.5" },
+      "interval": { "min": { "value": 10, "unit": "MINUTES" }, "max": { "value": 2, "unit": "HOURS" } },
+      "recipients": { "mode": "PERCENT", "count": 1000, "percent": 25 },
+      "threshold": 1000,
+      "allocation": { "normalPercent": 40, "plans": [{ "planId": "gold", "percent": 40 }, { "planId": "*", "percent": 20 }] },
+      "roomId": null
+    },
+    "user": {
+      "currencies": { "all": false, "codes": ["BTC", "ETH"] },
+      "minAmount": { "mode": "USD", "usd": "1", "perCurrency": [] },
+      "maxAmount": { "mode": "PER_CURRENCY", "usd": "0", "perCurrency": [{ "code": "BTC", "amount": "0.5" }, { "code": "ETH", "amount": "10" }] },
+      "recipients": { "modes": ["SPECIFIC", "ALL", "PERCENT"], "min": 2, "max": 50 },
+      "allocation": { "normalPercent": 100, "plans": [] },
+      "channels": { "all": true, "roomIds": [] },
+      "feePercent": 2.5,
+      "autoRepeat": {
+        "enabled": true,
+        "minCount": 2,
+        "maxCount": 10,
+        "minGap": { "value": 30, "unit": "SECONDS" },
+        "maxGap": { "value": 6, "unit": "HOURS" }
+      }
+    },
+    "rewards": {
+      "perRainDone": {
+        "exp": { "mode": "DYNAMIC", "amount": 1, "everyUsd": "10" },
+        "stars": { "mode": "FIXED", "amount": 5, "everyUsd": "1" }
+      },
+      "perRainReceived": {
+        "exp": { "mode": "FIXED", "amount": 1, "everyUsd": "1" },
+        "stars": { "mode": "FIXED", "amount": 0, "everyUsd": "1" }
+      }
+    },
+    "security": {
+      "commonIp": { "enabled": true },
+      "newIpSameCountry": { "enabled": true, "amountAboveUsd": "100", "require": "BOTH" },
+      "newCountry": { "enabled": true, "amountAboveUsd": "500", "questionnaire": true, "kycCheck": true },
+      "vpnProxy": { "enabled": true, "amountAboveUsd": null, "questionnaire": "MANUAL", "kycCheck": "AUTO" },
+      "questions": [{ "text": "Is this your own money?", "options": ["Yes", "No"], "okOptions": [0] }],
+      "kycMinLevel": 2
+    }
+  },
+  "cases": [
+    { "name": "the full sheet is accepted", "patch": {}, "valid": true },
+    { "name": "an unknown key is refused", "patch": { "system": { "premiumWeight": 1 } }, "valid": false },
+    { "name": "overall status MAINTAIN", "patch": { "status": { "overall": "MAINTENANCE" } }, "valid": true },
+    { "name": "a status that is not ON / OFF / MAINTENANCE", "patch": { "status": { "user": "PAUSED" } }, "valid": false },
+    { "name": "Rain Amount maximum below minimum", "patch": { "system": { "amountUsd": { "min": "60", "max": "50" } } }, "valid": false },
+    { "name": "Rain Amount of zero", "patch": { "system": { "amountUsd": { "min": "0", "max": "5" } } }, "valid": false },
+    { "name": "Rain Happens Every: minimum above maximum", "patch": { "system": { "interval": { "min": { "value": 3, "unit": "HOURS" }, "max": { "value": 2, "unit": "HOURS" } } } }, "valid": false },
+    { "name": "Rain Happens Every: in days is refused", "patch": { "system": { "interval": { "min": { "value": 1, "unit": "DAYS" }, "max": { "value": 2, "unit": "DAYS" } } } }, "valid": false },
+    { "name": "Number of users: All Active users", "patch": { "system": { "recipients": { "mode": "ALL" } } }, "valid": true },
+    { "name": "Number of users: an unknown form", "patch": { "system": { "recipients": { "mode": "HALF" } } }, "valid": false },
+    { "name": "no threshold", "patch": { "system": { "threshold": null } }, "valid": true },
+    { "name": "Normal and Premium do not add up to 100", "patch": { "system": { "allocation": { "normalPercent": 50, "plans": [{ "planId": "gold", "percent": 40 }] } } }, "valid": false },
+    { "name": "a Premium plan listed twice", "patch": { "system": { "allocation": { "normalPercent": 20, "plans": [{ "planId": "gold", "percent": 40 }, { "planId": "gold", "percent": 40 }] } } }, "valid": false },
+    { "name": "a currency listed twice", "patch": { "system": { "currencies": ["BTC", "btc"] } }, "valid": false },
+    { "name": "user rain: Cryptos Allowed ALL", "patch": { "user": { "currencies": { "all": true, "codes": [] } } }, "valid": true },
+    { "name": "user rain: minimum users above maximum", "patch": { "user": { "recipients": { "min": 60 } } }, "valid": false },
+    { "name": "user rain: no form of Number of users", "patch": { "user": { "recipients": { "modes": [] } } }, "valid": false },
+    { "name": "user rain: per-currency maximum below the per-currency minimum", "patch": { "user": { "minAmount": { "mode": "PER_CURRENCY", "usd": "0", "perCurrency": [{ "code": "BTC", "amount": "1" }] } } }, "valid": false },
+    { "name": "user rain: USD maximum below the USD minimum", "patch": { "user": { "maxAmount": { "mode": "USD", "usd": "0.5", "perCurrency": [] } } }, "valid": false },
+    { "name": "Fees on rains done by users above 100%", "patch": { "user": { "feePercent": 101 } }, "valid": false },
+    { "name": "Fees with more than two decimals", "patch": { "user": { "feePercent": 1.005 } }, "valid": false },
+    { "name": "Auto Repeat: minimum count above maximum", "patch": { "user": { "autoRepeat": { "minCount": 11 } } }, "valid": false },
+    { "name": "Auto Repeat: minimum gap above maximum", "patch": { "user": { "autoRepeat": { "minGap": { "value": 7, "unit": "HOURS" } } } }, "valid": false },
+    { "name": "Channels: Select with a room", "patch": { "user": { "channels": { "all": false, "roomIds": ["0190a000-0000-7000-8000-000000000001"] } } }, "valid": true },
+    { "name": "EXP: X for every 0$", "patch": { "rewards": { "perRainDone": { "exp": { "mode": "DYNAMIC", "amount": 1, "everyUsd": "0" } } } }, "valid": false },
+    { "name": "a questionnaire switched on with no question", "patch": { "security": { "questions": [] } }, "valid": false },
+    { "name": "an OK answer that is not an option", "patch": { "security": { "questions": [{ "text": "Is this your own money?", "options": ["Yes", "No"], "okOptions": [2] }] } }, "valid": false },
+    { "name": "Require One / Require Both only", "patch": { "security": { "newIpSameCountry": { "require": "ANY" } } }, "valid": false },
+    { "name": "VPN / Proxy trigger Auto / Manual / Off only", "patch": { "security": { "vpnProxy": { "kycCheck": "LATER" } } }, "valid": false }
+  ]
+}

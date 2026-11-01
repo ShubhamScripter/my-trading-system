@@ -1,0 +1,53 @@
+{
+  "name": "@orebit/admin-wallet-core",
+  "private": true,
+  "engines": {
+    "node": ">=20.9.0",
+    "npm": ">=10.0.0"
+  },
+  "scripts": {
+    "check": "tsc --noEmit -p tsconfig.json && node --check provision-test-database.cjs",
+    "prisma:validate": "prisma validate --schema schema.prisma",
+    "db:migrate": "prisma migrate deploy --schema schema.prisma",
+    "test:docker-config": "docker compose -f docker-compose.test.yml config -q",
+    "test:database-safety": "node --import tsx --test --test-concurrency=1 tests/test-database-safety.spec.ts",
+    "test:provision": "node provision-test-database.cjs",
+    "test:unit": "node --import tsx --test",
+    "test:db": "node --import tsx --test --test-concurrency=1",
+    "test:http": "node --import tsx --test tests/http.spec.ts",
+    "test:local-api": "node --import tsx --test tests/local-api.spec.ts",
+    "test:workers": "node --import tsx --test --test-concurrency=1 tests/configuration-worker.integration.spec.ts tests/provider-status-worker.integration.spec.ts tests/cronjob.persistence.spec.ts",
+    "test:deployment": "node --import tsx --test --test-concurrency=1 tests/deployment-contract.spec.ts",
+    "test:quality": "node --import tsx --test tests/line-limit.spec.ts tests/deployment-contract.spec.ts",
+    "test": "npm run check && npm run test:docker-config && npm run test:database-safety && npm run test:provision && node --import tsx --test --test-concurrency=1 \"tests/*.spec.ts\""
+  },
+  "dependencies": {
+    "@fastify/multipart": "10.1.1",
+    "@nestjs/common": "11.2.3",
+    "@nestjs/core": "11.2.3",
+    "@nestjs/platform-fastify": "11.2.3",
+    "fastify": "5.12.1",
+    "pg": "8.23.0",
+    "reflect-metadata": "0.2.2",
+    "rxjs": "7.8.2",
+    "sharp": "0.35.0",
+    "zod": "3.25.76"
+  },
+  "devDependencies": {
+    "@fastify/cookie": "11.1.2",
+    "@nestjs/testing": "11.2.3",
+    "@types/node": "22.20.1",
+    "@types/pg": "8.23.1",
+    "prisma": "6.19.3",
+    "tsx": "4.23.12",
+    "typescript": "5.9.3"
+  },
+  "overrides": {
+    "@nestjs/platform-fastify": {
+      "fastify": "5.12.1"
+    },
+    "@prisma/config": {
+      "deepmerge-ts": "8.0.2"
+    }
+  }
+}
