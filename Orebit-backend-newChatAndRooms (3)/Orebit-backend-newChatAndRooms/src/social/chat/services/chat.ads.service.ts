@@ -62,8 +62,8 @@ export class ChatAdsService {
     return this.planner.adRoom(room, settings);
   }
 
-  async quote(input: AdInput) {
-    return this.planner.summary(await this.planner.plan(input));
+  async quote(user: ChatUserContext, input: AdInput) {
+    return this.planner.summary(await this.planner.plan(input, user.id));
   }
 
   // Validates, persists, charges, and activates an advertisement idempotently.
@@ -100,7 +100,7 @@ export class ChatAdsService {
 
     const dbNow = await this.db.dbNow();
     await this.moderation.assertNotBanned(user, null, dbNow);
-    const plan = await this.planner.plan(input);
+    const plan = await this.planner.plan(input, user.id);
     const facts = await this.access.factsFor(user);
     if (facts.kycEntitlements && !facts.kycEntitlements.publicChat) {
       throw refuse(

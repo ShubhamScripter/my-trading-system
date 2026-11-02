@@ -12,7 +12,7 @@
     "lint": "eslint . --ext .ts",
     "check": "npm run typecheck && npm run lint",
     "format": "prettier --write \"src/**/*.ts\" \"auth/**/*.ts\" \"db/**/*.ts\" \"redis/**/*.ts\" \"tests/**/*.ts\"",
-    "test": "vitest run",
+    "test": "vitest run && vitest run --config vitest.chat.config.ts",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "test:integration": "vitest run tests/redis/quota.integration.spec.ts",

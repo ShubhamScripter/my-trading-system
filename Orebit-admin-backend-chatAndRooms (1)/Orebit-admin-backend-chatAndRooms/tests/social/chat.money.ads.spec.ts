@@ -149,6 +149,10 @@ describe.skipIf(!url)('ChatMoneyDbOperation.cancelAd (scratch database)', () => 
     // 3 posts (1 made): 2/3 of 10 is 6.666…, cut to 6.66666666
     const id = await ad('10', 2, 1, null);
     expect(await db.cancelAd(id, user, null, 'UNUSED')).toEqual({ cancelled: true, refundUsd: '6.66666666' });
+    const [cancelled] = await prisma.$queryRaw<{ revert_rewards: boolean }[]>`
+      SELECT revert_rewards FROM chat.chat_ads WHERE id = ${id}::uuid
+    `;
+    expect(cancelled!.revert_rewards).toBe(true);
     expect(await db.cancelAd(id, user, null, 'UNUSED')).toEqual({ cancelled: false, refundUsd: null });
   });
 

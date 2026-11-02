@@ -309,7 +309,7 @@ export class ChatMoneyDbOperation {
       await tx.$executeRaw`
         UPDATE chat.chat_ads
         SET status = 'CANCELLED', ended_at = now(), next_post_at = NULL, claimed_at = NULL, cancelled_by = ${adminId}::uuid,
-            cancel_note = ${note}, refund_usd = ${refundUsd}::numeric
+            cancel_note = ${note}, refund_usd = ${refundUsd}::numeric, revert_rewards = true
         WHERE id = ${id}::uuid
       `;
       await tx.$executeRaw`

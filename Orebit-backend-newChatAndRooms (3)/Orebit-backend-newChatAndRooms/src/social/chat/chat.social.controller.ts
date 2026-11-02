@@ -90,8 +90,9 @@ export class ChatSocialController {
   }
 
   async quoteAd(req: FastifyRequest, dto: AdDto): Promise<SuccessEnvelope<unknown>> {
-    await this.gate.assert(await this.user(req), 'ad', { ip: this.ip(req), limitKey: 'ad_quote' });
-    return ok(await this.ads.quote(dto));
+    const user = await this.user(req);
+    await this.gate.assert(user, 'ad', { ip: this.ip(req), limitKey: 'ad_quote' });
+    return ok(await this.ads.quote(user, dto));
   }
 
   async createAd(req: FastifyRequest, dto: AdDto): Promise<SuccessEnvelope<unknown>> {

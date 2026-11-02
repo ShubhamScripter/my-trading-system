@@ -82,7 +82,7 @@ export class ChatAdsPlanner {
   }
 
   // Validates the ad against the settings and prices it; nothing is stored.
-  async plan(input: AdInput): Promise<PlannedAd> {
+  async plan(input: AdInput, userId?: string): Promise<PlannedAd> {
     const settings = await this.settings.global();
     const ads = settings.ads;
     if (!ads.enabled) {
@@ -240,8 +240,8 @@ export class ChatAdsPlanner {
     let benefitDiscountUsd: string | null = null;
     const planId: string | null = null;
     const discounts = await this.ports.benefitDiscounts();
-    if (discounts) {
-      const disc = await discounts.discountFor('advertiser', ads.basePriceUsd);
+    if (discounts && userId) {
+      const disc = await discounts.discountFor(userId, ads.basePriceUsd);
       if (disc?.usd) benefitDiscountUsd = disc.usd;
     }
 
