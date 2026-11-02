@@ -63,6 +63,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   if (prisma === null) return;
+  await prisma.$executeRaw`DELETE FROM chat.room_messages WHERE content = ${`purge-history ${RUN}`}`.catch(() => undefined);
   // Best effort: the happy path already deletes the user and the cascade takes the
   // children with it. This covers a run that failed partway.
   await prisma.user.deleteMany({ where: { emailLower: { contains: RUN } } }).catch(() => undefined);
@@ -270,6 +271,13 @@ describe('the account lifecycle, end to end', () => {
       await users.requestAccountDeletion(userId, new Date(), new Date(Date.now() - 1000)),
     ).toBe(true);
 
+    // Chat history is retained after the identity row is erased. This used to be
+    // blocked by RESTRICT constraints in chat tables (and CASCADE would erase records).
+    await p.$executeRaw`
+      INSERT INTO chat.room_messages (id, room_id, user_id, content)
+      VALUES (${uuidv7()}::uuid, '00000000-0000-0000-0000-000000000000'::uuid, ${userId}::uuid, ${`purge-history ${RUN}`})
+    `;
+
     // Captured before the sweep so the assertions below can prove these rows were
     // SCRUBBED rather than deleted — a count of zero on the old address would be
     // satisfied by either.
@@ -288,6 +296,9 @@ describe('the account lifecycle, end to end', () => {
     // ── THE USER ROW IS GONE ────────────────────────────────────────────────
     expect(await p.user.findUnique({ where: { id: userId } })).toBeNull();
     expect(await users.findByEmail(email)).toBeNull();
+    expect(await p.$queryRaw<{ count: bigint }[]>`
+      SELECT count(*) AS count FROM chat.room_messages WHERE content = ${`purge-history ${RUN}`}
+    `).toEqual([{ count: 1n }]);
 
     // ── every cascading child went with it ──────────────────────────────────
     expect(await p.credential.count({ where: { userId } })).toBe(0);

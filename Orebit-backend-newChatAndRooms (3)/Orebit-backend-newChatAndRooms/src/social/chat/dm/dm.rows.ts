@@ -88,7 +88,7 @@ export const toDmMessage = (row: DmMessageSql): DmMessageRow => ({
   id: row.id,
   conversationId: row.conversation_id,
   senderId: row.sender_id,
-  senderUsername: row.sender_username,
+  senderUsername: row.sender_username ?? (row.type === 'SYSTEM' ? null : 'Deleted user'),
   content: row.content,
   type: row.type,
   metadata: row.metadata ?? {},

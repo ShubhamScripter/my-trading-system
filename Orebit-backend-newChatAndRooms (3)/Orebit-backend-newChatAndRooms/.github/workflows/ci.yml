@@ -13,7 +13,7 @@ name: CI
 
 on:
   push:
-    branches: ['**']
+    branches: ["**"]
   pull_request:
 
 permissions:
@@ -24,11 +24,24 @@ jobs:
     runs-on: ubuntu-latest
 
     services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: orebit
+          POSTGRES_PASSWORD: orebit
+          POSTGRES_DB: orebit_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U orebit -d orebit_test"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
       # The cache instance. Configured to discard under pressure, exactly as in
       # production — that is what makes it wrong for the queue and right for counters.
       redis-cache:
         image: redis:7-alpine
-        ports: ['6379:6379']
+        ports: ["6379:6379"]
         options: >-
           --health-cmd "redis-cli ping"
           --health-interval 5s
@@ -40,7 +53,7 @@ jobs:
       # than silently evict a job.
       redis-durable:
         image: redis:7-alpine
-        ports: ['6380:6379']
+        ports: ["6380:6379"]
         options: >-
           --health-cmd "redis-cli ping"
           --health-interval 5s
@@ -54,22 +67,34 @@ jobs:
       TEST_REDIS_URL: redis://127.0.0.1:6379
       REDIS_URL: redis://127.0.0.1:6379
       REDIS_DURABLE_URL: redis://127.0.0.1:6380
+      DATABASE_URL: postgresql://orebit:orebit@127.0.0.1:5432/orebit_test?schema=public
+      DATABASE_DIRECT_URL: postgresql://orebit:orebit@127.0.0.1:5432/orebit_test?schema=public
+      CHAT_TEST_DATABASE_URL: postgresql://orebit:orebit@127.0.0.1:5432/orebit_test?schema=public
+      TEST_DATABASE_URL: postgresql://orebit:orebit@127.0.0.1:5432/orebit_test?schema=public
 
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: "22"
           cache: npm
 
       # `ci` rather than `install`: the lockfile is the input, and a build that
       # silently resolves a different tree is not the build anyone reviewed.
       - run: npm ci
 
+      # Local scripts load `.env`; CI supplies its database URLs as job variables.
+      # Keep the shared script usable without committing a developer's secrets.
+      - run: cp .env.example .env
+
       # The Prisma client is generated, not committed, so typecheck cannot run without
       # this — every `@prisma/client` import would be unresolved.
       - run: npm run prisma:generate
+
+      # Database-backed chat specs must not silently skip in CI. Use the isolated
+      # PostgreSQL service above and apply both Prisma migrations and db/sql helpers.
+      - run: npm run db:migrate
 
       - run: npm run check
 

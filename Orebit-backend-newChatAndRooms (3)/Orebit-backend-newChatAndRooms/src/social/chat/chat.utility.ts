@@ -9,6 +9,7 @@ import type { GifProvider, StaffRole } from './chat.contract';
 import {
   ANONYMOUS_AUTHOR_ID,
   ANONYMOUS_AUTHOR_NAME,
+  DELETED_AUTHOR_NAME,
   CHAT_STAFF_ROLES,
   GIF_HOSTS,
   GLOBAL_ROOM_ID,
@@ -74,7 +75,7 @@ export function toPublicMessage(row: MessageRow, viewer: Viewer): PublicMessage 
       ? (row.metadata.bot?.username ?? SYSTEM_AUTHOR_NAME)
       : hidden
         ? ANONYMOUS_AUTHOR_NAME
-        : (row.authorUsername ?? ANONYMOUS_AUTHOR_NAME),
+        : (row.authorUsername ?? DELETED_AUTHOR_NAME),
     content: row.content,
     type: row.type,
     skin: row.skin,

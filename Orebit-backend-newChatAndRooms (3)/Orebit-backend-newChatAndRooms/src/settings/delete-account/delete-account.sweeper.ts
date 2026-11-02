@@ -10,10 +10,10 @@ import { UserDbOperation } from '../../../auth/persistence/user.dboperation';
  * and stays fully restorable for thirty days.
  *
  * This is the only thing that turns that deadline into an erasure, and the erasure is a
- * real one: `purgeAccount` issues `DELETE FROM users`, which cascades to every child
- * table. There is no tombstone and no terminal status — after it commits the account
- * does not exist in the data model at all, reactivation is impossible rather than
- * refused, and the email and username are free because no row holds them.
+ * real one: `purgeAccount` issues `DELETE FROM users`, which cascades to identity-owned
+ * child tables. Chat history keeps its actor UUIDs without an identity foreign key and
+ * displays “Deleted user”. There is no account tombstone — after commit, reactivation
+ * is impossible and the email and username are free because no user row holds them.
  *
  * That is a line with no path back across it, which is the reason this class is as
  * conservative as it is.

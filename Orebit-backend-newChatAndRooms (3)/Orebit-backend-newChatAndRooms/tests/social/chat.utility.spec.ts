@@ -494,6 +494,14 @@ describe('toPublicMessage', () => {
     expect(alert).toMatchObject({ username: 'OREBiT', alertType: 'LEVEL_UP' });
     expect(JSON.stringify(alert)).not.toMatch(/retractedBy|pinnedBy|cost/);
   });
+
+  it('shows a deleted-user label when the author account has been purged', () => {
+    const deletedAuthor = { ...base, metadata: {}, authorUsername: null };
+    expect(toPublicMessage(deletedAuthor, { userId: 'x', isStaff: false })).toMatchObject({
+      userId: 'author',
+      username: 'Deleted user',
+    });
+  });
 });
 
 describe('cursors', () => {

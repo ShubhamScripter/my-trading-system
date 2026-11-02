@@ -888,8 +888,10 @@ export class UserDbOperation {
    *
    * ─── What the cascade does, and why it is trusted here ──────────────────────
    *
-   * Every foreign key into `identity.users` is ON DELETE CASCADE except two, verified
-   * against the live database rather than read off the schema. So one DELETE removes
+   * Every identity-owned foreign key into `identity.users` is ON DELETE CASCADE except
+   * two, verified against the live database rather than read off the schema. Chat-owned
+   * history intentionally keeps its actor UUIDs without foreign keys, so account erasure
+   * cannot block or cascade-delete chat rows. One DELETE removes
    * credentials, TOTP factors, passkeys, recovery codes, the Payment PIN, OAuth links,
    * trusted devices, verification challenges, retained emails, username reservations,
    * login attempts and sessions.
@@ -1057,9 +1059,11 @@ export class UserDbOperation {
       // row IS the hard-deleted state, which is the only representation that cannot be
       // mistaken for a recoverable one and the only one that leaves nothing to scrub.
       //
-      // This cascades. Verified against the live database rather than assumed — every
-      // foreign key into `identity.users` is ON DELETE CASCADE except the two SET NULLs
-      // handled above:
+      // This cascades identity-owned data. Chat actor references deliberately have no
+      // foreign keys, preserving history without retaining an identity row. Verified
+      // against the live database rather than assumed — every identity-owned foreign
+      // key into `identity.users` is ON DELETE CASCADE except the two SET NULLs handled
+      // above:
       //
       //   credentials · totp_factors · passkeys · recovery_codes · payment_pins
       //   oauth_links · trusted_devices · verification_challenges · retained_emails

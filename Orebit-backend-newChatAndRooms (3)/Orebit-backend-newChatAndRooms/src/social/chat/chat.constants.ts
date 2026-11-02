@@ -14,6 +14,7 @@ export const SYSTEM_AUTHOR_NAME = 'OREBiT';
  *  system author, so a client can never mistake an anonymous user for an official alert. */
 export const ANONYMOUS_AUTHOR_ID = '00000000-0000-4000-8000-000000000000';
 export const ANONYMOUS_AUTHOR_NAME = 'Anonymous';
+export const DELETED_AUTHOR_NAME = 'Deleted user';
 
 // Chat staff roles that moderate by default and skip the automatic checks (words, links, spam). What each role may
 // actually do is its permission set in the chat settings (`staffRoles`, Module 4), checked by chat.permissions.ts.
