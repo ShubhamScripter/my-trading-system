@@ -127,7 +127,7 @@ export default function GroupMembersModal({
     if (!timeoutModalMember) return;
     setActionLoading(timeoutModalMember.userId);
     try {
-      await dmApi.timeoutMember(conv.id, timeoutModalMember.userId, timeoutMinutes);
+      await dmApi.timeoutMember(conv.id, timeoutModalMember.username, timeoutMinutes);
       setTimeoutModalMember(null);
       await loadMembers();
       onMemberChanged?.();
@@ -421,7 +421,7 @@ export default function GroupMembersModal({
                         >
                           {m.role !== 'ADMIN' && m.role !== 'OWNER' && (
                             <button
-                              onClick={() => handleRoleChange(m.userId, 'ADMIN')}
+                              onClick={() => handleRoleChange(m.username, 'ADMIN')}
                               style={{
                                 background: 'none',
                                 border: 'none',
@@ -441,7 +441,7 @@ export default function GroupMembersModal({
                           )}
                           {m.role === 'ADMIN' && (
                             <button
-                              onClick={() => handleRoleChange(m.userId, 'MEMBER')}
+                              onClick={() => handleRoleChange(m.username, 'MEMBER')}
                               style={{
                                 background: 'none',
                                 border: 'none',
@@ -483,7 +483,7 @@ export default function GroupMembersModal({
                           </button>
 
                           <button
-                            onClick={() => handleRemoveMember(m.userId)}
+                            onClick={() => handleRemoveMember(m.username)}
                             style={{
                               background: 'none',
                               border: 'none',
@@ -503,7 +503,7 @@ export default function GroupMembersModal({
 
                           {conv.group?.visibility === 'PUBLIC' && (
                           <button
-                            onClick={() => handleBanMember(m.userId)}
+                            onClick={() => handleBanMember(m.username)}
                             style={{
                               background: 'none',
                               border: 'none',

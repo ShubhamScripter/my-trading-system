@@ -169,7 +169,11 @@ export class ChatDbOperation {
   /** Public user lookups accept usernames only; UUIDs and login codes are private identifiers. */
   async resolvePublicUsername(username: string): Promise<string | null> {
     const value = username.trim().replace(/^@/, '');
-    if (!value || /^[0-9a-f-]{36}$/i.test(value)) return null;
+    if (
+      !value ||
+      /^[0-9a-f-]{36}$/i.test(value) ||
+      (value.length === 14 && value.toUpperCase().startsWith('OREBIT'))
+    ) return null;
     const user = await this.prisma.user.findFirst({
       where: { deletedAt: null, status: 'ACTIVE', usernameLower: value.toLowerCase() },
       select: { id: true },
@@ -177,15 +181,9 @@ export class ChatDbOperation {
     return user?.id ?? null;
   }
 
-  /** Resolves user handle or UUID to internal user ID without leaking public codes. */
+  /** Public chat endpoints resolve usernames only; internal UUIDs stay server-side. */
   async resolveUserHandle(handle: string): Promise<string | null> {
-    const value = handle.trim().replace(/^@/, '');
-    if (/^[0-9a-f-]{36}$/i.test(value)) return this.resolveUserId(value);
-    const user = await this.prisma.user.findFirst({
-      where: { deletedAt: null, status: 'ACTIVE', usernameLower: value.toLowerCase() },
-      select: { id: true },
-    });
-    return user?.id ?? null;
+    return this.resolvePublicUsername(handle);
   }
 
   /** Live accounts for the given lower-case usernames, one query. */

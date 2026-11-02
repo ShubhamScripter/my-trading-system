@@ -285,7 +285,7 @@ describe.skipIf(!url)('chat Modules 8–9 hardening (real services, scratch data
   it('lookup is by username only; a blocked person looks like an unknown one; only the username is returned', async () => {
     expect(await privacyService.resolveUser(u.gus, u.hal.username)).toEqual({ username: u.hal.username });
     // Whatever the handle, only the username comes back: no id, no login code.
-    expect(Object.keys(await privacyService.resolveUser(u.gus, u.hal.id))).toEqual(['username']);
+    expect(await refusal(() => privacyService.resolveUser(u.gus, u.hal.id))).toBe(ERR.NOT_FOUND);
     expect(await refusal(() => privacyService.resolveUser(u.gus, `nobody-${tag}`))).toBe(ERR.NOT_FOUND);
     await module.get(ChatRelationsService).set(u.hal, u.gus.username, 'blocks', true);
     expect(await refusal(() => privacyService.resolveUser(u.gus, u.hal.username))).toBe(ERR.NOT_FOUND);

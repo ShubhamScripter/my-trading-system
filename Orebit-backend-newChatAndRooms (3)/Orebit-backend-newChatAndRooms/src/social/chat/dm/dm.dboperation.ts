@@ -141,13 +141,8 @@ export class DmDbOperation {
   // Resolves a user supplied to a group action through membership first, so suspended accounts still work by username.
   async memberIdByHandle(conversationId: string, handle: string): Promise<string | null> {
     const value = handle.trim().replace(/^@/, '');
-    const rows = isUuid(value)
-      ? await this.prisma.$queryRaw<{ user_id: string }[]>`
-          SELECT user_id FROM chat.dm_members
-          WHERE conversation_id = ${conversationId}::uuid AND user_id = ${value.toLowerCase()}::uuid
-          LIMIT 1
-        `
-      : await this.prisma.$queryRaw<{ user_id: string }[]>`
+    if (!value || isUuid(value)) return null;
+    const rows = await this.prisma.$queryRaw<{ user_id: string }[]>`
           SELECT dm.user_id FROM chat.dm_members dm
           JOIN identity.users u ON u.id = dm.user_id AND u.deleted_at IS NULL
           WHERE dm.conversation_id = ${conversationId}::uuid AND u.username_lower = ${value.toLowerCase()}
