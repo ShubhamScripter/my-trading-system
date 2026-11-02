@@ -67,7 +67,7 @@ export interface UserRainResult {
   readonly fee: string;
   readonly distributable: string;
   readonly recipients: number;
-  readonly shares: { username: string | null; amount: string; tier: string }[];
+  readonly shares: { username: string | null; amount: string }[];
   readonly verification?: unknown;
   readonly repeat?: { count: number; gapSeconds: number };
   readonly messageId?: string;

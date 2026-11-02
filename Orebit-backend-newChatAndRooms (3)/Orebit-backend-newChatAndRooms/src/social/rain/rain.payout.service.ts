@@ -31,7 +31,7 @@ export class RainPayoutService {
     fee: string;
     distributable: string;
     recipients: number;
-    shares: { username: string | null; amount: string; tier: string }[];
+    shares: { username: string | null; amount: string }[];
     messageId?: string;
   }> {
     const shares = await this.db.sharesOf(run.id);
@@ -86,7 +86,8 @@ export class RainPayoutService {
       fee: formatMinor(run.feeMinor),
       distributable: formatMinor(run.distributableMinor),
       recipients: shares.length,
-      shares: shares.map((s) => ({ username: usernames.get(s.userId) ?? null, amount: formatMinor(s.amount), tier: s.tier })),
+      // Keep premium eligibility private; callers only need the public recipient handle and amount.
+      shares: shares.map((s) => ({ username: usernames.get(s.userId) ?? null, amount: formatMinor(s.amount) })),
       messageId,
     };
   }
