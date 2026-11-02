@@ -67,8 +67,8 @@ describe.skipIf(!url)('penalties (real services, scratch database)', () => {
     settings();
     ({ prisma, module } = await bootChat(url!, emitted, () => document));
     u = await makeUsers(prisma, NAMES, tag);
-    await prisma.$executeRaw`INSERT INTO chat.staff_roles (user_id, role) VALUES (${u.boss.id}::uuid, 'ADMIN'::chat."StaffRole")`;
-    await prisma.$executeRaw`INSERT INTO chat.staff_roles (user_id, role) VALUES (${u.mod.id}::uuid, 'MODERATOR'::chat."StaffRole")`;
+    await prisma.$executeRaw`INSERT INTO chat.staff_roles (id, user_id, role) VALUES (${uuidv7()}::uuid, ${u.boss.id}::uuid, 'ADMIN'::chat."StaffRole")`;
+    await prisma.$executeRaw`INSERT INTO chat.staff_roles (id, user_id, role) VALUES (${uuidv7()}::uuid, ${u.mod.id}::uuid, 'MODERATOR'::chat."StaffRole")`;
     u.boss = { ...u.boss, staffRole: 'ADMIN' };
     u.mod = { ...u.mod, staffRole: 'MODERATOR' };
   }, 60_000);
@@ -258,7 +258,7 @@ describe.skipIf(!url)('penalties (real services, scratch database)', () => {
   // ─── FR-094 ────────────────────────────────────────────────────────────────────────────────────────────────────
   const newReport = async (about: ChatUserContext) => {
     const id = uuidv7();
-    await prisma.$executeRaw`INSERT INTO chat.report_reasons (code, label, is_active, sort_order) VALUES ('atomic_test', 'Atomic test', true, 999) ON CONFLICT (code) DO NOTHING`;
+    await prisma.$executeRaw`INSERT INTO chat.report_reasons (code, label, is_active, sort_order) VALUES ('atomic_test', 'Atomic test', true, 999) ON CONFLICT (code, report_type) DO NOTHING`;
     await prisma.$executeRaw`
       INSERT INTO chat.chat_message_reports (id, reporter_id, reported_user_id, reason, status)
       VALUES (${id}::uuid, ${u.dan.id}::uuid, ${about.id}::uuid, 'atomic_test', 'PENDING'::chat."ReportStatus")

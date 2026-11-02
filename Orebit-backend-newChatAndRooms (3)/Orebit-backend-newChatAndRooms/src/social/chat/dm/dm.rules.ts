@@ -89,15 +89,23 @@ export function effectivePrefs(
 }
 
 // Minutes since midnight in the time zone; null when the zone is unknown or invalid (there is no UTC fallback).
+const formatters = new Map<string, Intl.DateTimeFormat>();
+
 export function localMinutes(at: Date, timeZone: string | null): number | null {
   if (!timeZone) return null;
   try {
-    const parts = new Intl.DateTimeFormat('en-GB', {
-      timeZone,
-      hour: '2-digit',
-      minute: '2-digit',
-      hourCycle: 'h23',
-    }).formatToParts(at);
+    let formatter = formatters.get(timeZone);
+    if (!formatter) {
+      formatter = new Intl.DateTimeFormat('en-GB', {
+        timeZone,
+        hour: '2-digit',
+        minute: '2-digit',
+        hourCycle: 'h23',
+      });
+      if (formatters.size >= 128) formatters.delete(formatters.keys().next().value!);
+      formatters.set(timeZone, formatter);
+    }
+    const parts = formatter.formatToParts(at);
     const hour = Number(parts.find((p) => p.type === 'hour')?.value ?? '0');
     const minute = Number(parts.find((p) => p.type === 'minute')?.value ?? '0');
     return hour * 60 + minute;

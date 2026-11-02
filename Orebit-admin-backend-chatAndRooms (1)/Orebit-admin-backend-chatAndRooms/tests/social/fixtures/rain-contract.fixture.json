@@ -55,6 +55,7 @@
     { "name": "Rain Amount maximum below minimum", "patch": { "system": { "amountUsd": { "min": "60", "max": "50" } } }, "valid": false },
     { "name": "Rain Amount of zero", "patch": { "system": { "amountUsd": { "min": "0", "max": "5" } } }, "valid": false },
     { "name": "Rain Happens Every: minimum above maximum", "patch": { "system": { "interval": { "min": { "value": 3, "unit": "HOURS" }, "max": { "value": 2, "unit": "HOURS" } } } }, "valid": false },
+    { "name": "Rain Happens Every: seconds are not in the system scope", "patch": { "system": { "interval": { "min": { "value": 30, "unit": "SECONDS" } } } }, "valid": false },
     { "name": "Rain Happens Every: in days is refused", "patch": { "system": { "interval": { "min": { "value": 1, "unit": "DAYS" }, "max": { "value": 2, "unit": "DAYS" } } } }, "valid": false },
     { "name": "Number of users: All Active users", "patch": { "system": { "recipients": { "mode": "ALL" } } }, "valid": true },
     { "name": "Number of users: an unknown form", "patch": { "system": { "recipients": { "mode": "HALF" } } }, "valid": false },

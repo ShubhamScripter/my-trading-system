@@ -55,8 +55,8 @@ describe.skipIf(!url)('two reasons: internal and for the user (real services, sc
     ({ prisma, module } = await bootChat(url!, emitted, () => document));
     module.get(ChatBus).subscribe((change) => void changes.push(change));
     u = await makeUsers(prisma, NAMES, tag);
-    await prisma.$executeRaw`INSERT INTO chat.staff_roles (user_id, role) VALUES (${u.boss.id}::uuid, 'ADMIN'::chat."StaffRole")`;
-    await prisma.$executeRaw`INSERT INTO chat.staff_roles (user_id, role) VALUES (${u.mod.id}::uuid, 'MODERATOR'::chat."StaffRole")`;
+    await prisma.$executeRaw`INSERT INTO chat.staff_roles (id, user_id, role) VALUES (${uuidv7()}::uuid, ${u.boss.id}::uuid, 'ADMIN'::chat."StaffRole")`;
+    await prisma.$executeRaw`INSERT INTO chat.staff_roles (id, user_id, role) VALUES (${uuidv7()}::uuid, ${u.mod.id}::uuid, 'MODERATOR'::chat."StaffRole")`;
     u.boss = { ...u.boss, staffRole: 'ADMIN' };
     u.mod = { ...u.mod, staffRole: 'MODERATOR' };
   }, 60_000);
@@ -167,7 +167,7 @@ describe.skipIf(!url)('FR-225: GET chat/limitations (real services, scratch data
     document = ChatSettingsDocumentSchema.parse({ global: { testProviders: { enabled: true }, ...READY } });
     ({ prisma, module } = await bootChat(url!, [], () => document));
     u = await makeUsers(prisma, ['boss', 'ada', 'bob'] as const, tag);
-    await prisma.$executeRaw`INSERT INTO chat.staff_roles (user_id, role) VALUES (${u.boss.id}::uuid, 'ADMIN'::chat."StaffRole")`;
+    await prisma.$executeRaw`INSERT INTO chat.staff_roles (id, user_id, role) VALUES (${uuidv7()}::uuid, ${u.boss.id}::uuid, 'ADMIN'::chat."StaffRole")`;
     u.boss = { ...u.boss, staffRole: 'ADMIN' };
   }, 60_000);
 

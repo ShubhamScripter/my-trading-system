@@ -1,4 +1,4 @@
-import { Body, Controller, Logger, Post } from '@nestjs/common';
+import { Body, Controller, Get, HttpException, Logger, Post } from '@nestjs/common';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
@@ -32,6 +32,11 @@ class ScrubbedRoutes {
   @Post()
   post(@Body() body: unknown): { data: z.infer<typeof schema> } {
     return ok(parseDto(schema, body));
+  }
+
+  @Get('third-party-error')
+  thirdPartyError(): never {
+    throw new HttpException('private upstream payload: secret-token', 413);
   }
 }
 
@@ -68,6 +73,12 @@ async function reject(body: unknown): Promise<Record<string, unknown>> {
 }
 
 describe('the log line for a rejected request', () => {
+  it('does not return an HTTP library message to the client', async () => {
+    const response = await request(app.getHttpServer()).get('/scrubbed/third-party-error').expect(413);
+    expect(response.body.title).toBe('Request validation failed');
+    expect(JSON.stringify(response.body)).not.toContain('secret-token');
+  });
+
   it('names the route and every failing field', async () => {
     const line = await reject({ email: 'not-an-email', password: 'short', otp: '123456' });
 

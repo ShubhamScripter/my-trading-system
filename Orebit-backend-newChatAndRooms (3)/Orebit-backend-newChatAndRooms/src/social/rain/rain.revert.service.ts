@@ -41,7 +41,7 @@ export class RainRevertService {
     const outcome = await this.prisma.$transaction(async (tx) => {
       const locked = await this.db.lockRun(tx, run.id);
       if (!locked || (locked.status !== 'COMPLETED' && locked.status !== 'PARTIALLY_REVERSED')) return null;
-      const taken = await this.db.takeShares(tx, run.id, onlyUserIds ?? []);
+      const taken = await this.db.takeShares(tx, run.id, onlyUserIds);
       if (taken.length === 0) return null;
       const held =
         job.shortfall === 'ZERO'
@@ -59,9 +59,9 @@ export class RainRevertService {
         shortfall: job.shortfall,
       });
       await this.wallet.apply(tx, plan.legs, run.currency, { allowNegative: job.shortfall === 'NEGATIVE' });
-      const reclaimed = new Map<string, bigint>();
-      for (const leg of plan.legs) if (leg.delta < 0n) reclaimed.set(leg.userId, -leg.delta);
-      await this.db.setReclaimed(tx, run.id, reclaimed);
+      const debits = new Map(plan.legs.filter((leg) => leg.delta < 0n).map((leg) => [leg.userId, -leg.delta]));
+      const reclaimed = new Map(taken.map((share) => [share.userId, debits.get(share.userId) ?? 0n]));
+      await this.db.setReclaimed(tx, run.id, reclaimed, job.id);
       const status = (await this.db.openShareCount(tx, run.id)) === 0 ? 'REVERSED' : 'PARTIALLY_REVERSED';
       await this.db.markReverted(tx, run.id, status, note, {
         jobId: job.id,
@@ -71,7 +71,7 @@ export class RainRevertService {
         shortfall: job.shortfall,
         reclaimed: formatMinor(plan.reclaimed),
         missing: formatMinor(plan.missing),
-        creditedTo: plan.creditedTo === FEE_ACCOUNT ? 'PLATFORM' : 'PAYER',
+        creditedTo: plan.creditedTo === 'none' ? 'NONE' : plan.creditedTo === FEE_ACCOUNT ? 'PLATFORM' : 'PAYER',
       });
       return { taken, plan, status };
     });

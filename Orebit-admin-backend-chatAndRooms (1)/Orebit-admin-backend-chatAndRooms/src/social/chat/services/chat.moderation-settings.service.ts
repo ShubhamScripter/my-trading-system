@@ -77,8 +77,7 @@ export class ChatModerationSettingsService {
       roomId,
       linkPolicy: cfg.linksPolicy ?? 'NO_LINKS',
       bannedWords: cfg.bannedWords ?? [],
-      userRestrictions: restrictions.map((r, index) => ({
-        id: String(index),
+      userRestrictions: restrictions.map((r) => ({
         targetType: r.targetType,
         targetValue: r.targetValue,
         restriction: r.restriction,
@@ -86,7 +85,6 @@ export class ChatModerationSettingsService {
         userReason: r.userReason ?? null,
         commands: Array.isArray(r.commands) ? r.commands : [],
         expiresAt: r.expiresAt ?? null,
-        createdAt: '',
       })),
     };
   }

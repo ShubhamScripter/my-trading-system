@@ -212,7 +212,8 @@ export class ChatEventsListener implements OnApplicationBootstrap, OnModuleDestr
         if (broadcastId) {
           void this.db
             .broadcastMessages(broadcastId)
-            .then((rows) => this.bus.publish({ kind: 'alert', messageIds: rows.map((row) => row.id) }));
+            .then((rows) => this.bus.publish({ kind: 'alert', messageIds: rows.map((row) => row.id) }))
+            .catch((err: unknown) => this.logger.warn({ err, broadcastId }, 'broadcast alert lookup failed'));
         }
         return;
       }
@@ -313,7 +314,8 @@ export class ChatEventsListener implements OnApplicationBootstrap, OnModuleDestr
             .broadcastMessages(broadcastId)
             .then((rows) =>
               this.bus.publish({ kind: 'alert', messageIds: rows.map((row) => row.id) }),
-            );
+            )
+            .catch((err: unknown) => this.logger.warn({ err, broadcastId }, 'broadcast alert lookup failed'));
         }
         return;
       }
@@ -336,7 +338,7 @@ export class ChatEventsListener implements OnApplicationBootstrap, OnModuleDestr
                 action: 'retract',
                 roomId: action.target_room_id,
                 messageId: action.target_message_id,
-                note: action.note,
+                note: null,
               },
             });
           }
@@ -356,7 +358,7 @@ export class ChatEventsListener implements OnApplicationBootstrap, OnModuleDestr
             notice: {
               action: name === 'ban.create' ? 'ban' : 'unban',
               roomId: action.target_room_id,
-              note: action.note,
+              note: null,
               expiresAt: typeof value.expiresAt === 'string' ? value.expiresAt : null,
             },
           });
@@ -419,7 +421,7 @@ export class ChatEventsListener implements OnApplicationBootstrap, OnModuleDestr
         notice: {
           action: 'ban',
           roomId: action.target_room_id,
-          note: action.note,
+          note: null,
           expiresAt: typeof value.expiresAt === 'string' ? value.expiresAt : null,
         },
       });
@@ -427,7 +429,7 @@ export class ChatEventsListener implements OnApplicationBootstrap, OnModuleDestr
       this.bus.publish({
         kind: 'notice',
         userId,
-        notice: { action: 'warn', roomId: action.target_room_id, note: action.note },
+        notice: { action: 'warn', roomId: action.target_room_id, note: null },
       });
     } else if (
       value.action === 'RETRACT_MESSAGE' &&
@@ -450,7 +452,7 @@ export class ChatEventsListener implements OnApplicationBootstrap, OnModuleDestr
           action: 'retract',
           roomId: action.target_room_id,
           messageId: action.target_message_id,
-          note: action.note,
+          note: null,
         },
       });
     }

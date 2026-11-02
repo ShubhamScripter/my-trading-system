@@ -4,6 +4,7 @@ import type { ChatModerationDbOperation } from '../../src/social/chat/chat-moder
 import type {
   ChatSupportDbOperation,
   ReplyResult,
+  TicketMessage,
   TicketSummary,
 } from '../../src/social/chat/persistence/chat-support.dboperation';
 import { ChatSupportService } from '../../src/social/chat/services/chat-support.service';
@@ -32,7 +33,7 @@ function harness(
       cursors: ['2026-10-18T10:00:00.000000Z|' + TICKET_ID],
     })),
     ticket: vi.fn(async () => (opts.found === undefined ? ticket() : opts.found)),
-    messages: vi.fn(async () => []),
+    messages: vi.fn(async () => ({ rows: [] as TicketMessage[], cursors: [] as string[] })),
     reply: vi.fn(async () => opts.reply ?? 'replied'),
     close: vi.fn(async () => opts.closed ?? true),
   };
@@ -58,6 +59,19 @@ const failure = async (work: Promise<unknown>): Promise<string> => {
 };
 
 describe('admin ChatSupportService (Chat MAIN "Support Chat")', () => {
+  it('pages ticket messages with a microsecond cursor', async () => {
+    const { service, db } = harness();
+    const first = { id: TICKET_ID, fromSupport: false, senderUsername: 'ada', content: 'first', createdAt: '2026-10-18T10:00:00.000Z' };
+    const second = { ...first, id: ADMIN_ID, content: 'second' };
+    db.messages.mockResolvedValueOnce({
+      rows: [first, second],
+      cursors: [`2026-10-18T10:00:00.000001Z|${TICKET_ID}`, `2026-10-18T10:00:00.000002Z|${ADMIN_ID}`],
+    });
+    const page = await service.ticket({ ticketId: TICKET_ID, limit: 1 });
+    expect(page.messages).toEqual([first]);
+    expect(page.nextCursor).toBe(`2026-10-18T10:00:00.000001Z|${TICKET_ID}`);
+  });
+
   it('an answer is recorded with the admin id and reaches the user', async () => {
     const { service, db, moderation } = harness();
     await service.reply({ ticketId: TICKET_ID, content: 'We are checking it' }, ADMIN_ID);

@@ -17,8 +17,8 @@ interface HistorySql {
   created_at: Date;
 }
 
-function big(value: bigint | null | undefined): bigint | null {
-  return value === null || value === undefined ? null : BigInt(value);
+function big(value: bigint | null | undefined): string | null {
+  return value === null || value === undefined ? null : BigInt(value).toString();
 }
 
 function toHistory(row: HistorySql): RainHistoryRow {
@@ -29,8 +29,8 @@ function toHistory(row: HistorySql): RainHistoryRow {
     roomId: row.room_id,
     initiator: row.initiator,
     currency: row.currency,
-    potMinor: BigInt(row.pot_minor),
-    feeMinor: BigInt(row.fee_minor),
+    potMinor: BigInt(row.pot_minor).toString(),
+    feeMinor: BigInt(row.fee_minor).toString(),
     usdValueMinor: big(row.usd_value_minor),
     recipientCount: row.recipient_count,
     messageId: row.message_id,
@@ -43,7 +43,7 @@ export class RainHistoryDbOperation {
   constructor(private readonly prisma: PrismaService) {}
 
   async recent(limit: number): Promise<
-    { id: string; kind: string; status: string; currency: string; potMinor: bigint; createdAt: string }[]
+    { id: string; kind: string; status: string; currency: string; potMinor: string; createdAt: string }[]
   > {
     const rows = await this.prisma.$queryRaw<
       { id: string; kind: string; status: string; currency: string; pot_minor: bigint; created_at: Date }[]
@@ -59,7 +59,7 @@ export class RainHistoryDbOperation {
       kind: row.kind,
       status: row.status,
       currency: row.currency,
-      potMinor: BigInt(row.pot_minor),
+      potMinor: BigInt(row.pot_minor).toString(),
       createdAt: row.created_at.toISOString(),
     }));
   }
@@ -98,7 +98,7 @@ export class RainHistoryDbOperation {
       kind: string;
       status: string;
       currency: string;
-      amountMinor: bigint;
+      amountMinor: string;
       reversed: boolean;
       from: string | null;
       createdAt: string;
@@ -130,7 +130,7 @@ export class RainHistoryDbOperation {
       kind: row.kind,
       status: row.status,
       currency: row.currency,
-      amountMinor: BigInt(row.amount_minor),
+      amountMinor: BigInt(row.amount_minor).toString(),
       reversed: row.reversed_at !== null,
       from: row.initiator,
       createdAt: row.created_at.toISOString(),

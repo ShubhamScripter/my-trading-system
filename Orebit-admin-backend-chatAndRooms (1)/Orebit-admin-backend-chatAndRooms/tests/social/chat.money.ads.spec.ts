@@ -152,17 +152,17 @@ describe.skipIf(!url)('ChatMoneyDbOperation.cancelAd (scratch database)', () => 
     // 1 post (made) + 10 pinned minutes in two rooms = 11 units; room A has shown 4 minutes, room B none: 6 of 11 unused.
     const id = await ad('11', 0, 1, 10);
     await prisma.$executeRaw`
-      INSERT INTO chat.chat_ad_placements (id, ad_id, room_id, minutes, status, starts_at, ends_at)
-      VALUES (${ChatUtility.generateUuid()}::uuid, ${id}::uuid, ${roomA}::uuid, 10, 'DONE', now() - interval '1 hour', now() - interval '56 minutes'),
-             (${ChatUtility.generateUuid()}::uuid, ${id}::uuid, ${roomB}::uuid, 10, 'QUEUED', NULL, NULL)
+      INSERT INTO chat.chat_ad_placements (id, ad_id, room_id, minutes, duration_seconds, status, starts_at, ends_at)
+      VALUES (${ChatUtility.generateUuid()}::uuid, ${id}::uuid, ${roomA}::uuid, 10, 600, 'DONE', now() - interval '1 hour', now() - interval '56 minutes'),
+             (${ChatUtility.generateUuid()}::uuid, ${id}::uuid, ${roomB}::uuid, 10, 600, 'QUEUED', NULL, NULL)
     `;
     // DONE counts its full 10 minutes in room A: so 0 pinned minutes are unused, only posts (0): refund 0
     expect((await db.cancelAd(id, user, null, 'UNUSED')).refundUsd).toBe('0.00000000');
     const other = await ad('11', 0, 1, 10);
     await prisma.$executeRaw`
-      INSERT INTO chat.chat_ad_placements (id, ad_id, room_id, minutes, status) VALUES
-        (${ChatUtility.generateUuid()}::uuid, ${other}::uuid, ${roomA}::uuid, 10, 'QUEUED'),
-        (${ChatUtility.generateUuid()}::uuid, ${other}::uuid, ${roomB}::uuid, 10, 'QUEUED')
+      INSERT INTO chat.chat_ad_placements (id, ad_id, room_id, minutes, duration_seconds, status) VALUES
+        (${ChatUtility.generateUuid()}::uuid, ${other}::uuid, ${roomA}::uuid, 10, 600, 'QUEUED'),
+        (${ChatUtility.generateUuid()}::uuid, ${other}::uuid, ${roomB}::uuid, 10, 600, 'QUEUED')
     `;
     // nothing shown anywhere: 10 of 11 units unused, not 20 of 21
     expect((await db.cancelAd(other, user, null, 'UNUSED')).refundUsd).toBe('10.00000000');

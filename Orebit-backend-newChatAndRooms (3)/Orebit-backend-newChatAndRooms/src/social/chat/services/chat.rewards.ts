@@ -16,7 +16,7 @@ export function rewardFor(rule: RewardRule, usd: string): number {
   if (rule.amount === 0) return 0;
   if (rule.mode === 'FIXED') return rule.amount;
   const every = new Prisma.Decimal(rule.everyUsd);
-  if (every.lte(0)) return rule.amount;
+  if (every.lte(0)) return 0;
   const steps = new Prisma.Decimal(usd).div(every).floor().toNumber();
   return steps * rule.amount;
 }

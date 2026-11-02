@@ -97,3 +97,34 @@ describe('what a stand-in says about a user', () => {
     expect(records.testEntitlement).not.toHaveBeenCalled();
   });
 });
+
+it('loads thousands of account zones in one batched port call and reuses the short cache', async () => {
+  const providers = new TestProviders(
+    { testEntitlement: vi.fn(async () => null) } as never,
+    { global: vi.fn(async () => ({ testProviders: { enabled: false } })) } as never,
+  );
+  const country = { effectiveCountry: vi.fn(async () => null) } as unknown as RegistrationCountryProvider;
+  const ids = Array.from({ length: 5_000 }, (_, i) => `user-${i}`);
+  const zones = {
+    timeZones: vi.fn(async (userIds: readonly string[]) => new Map(userIds.map((id) => [id, 'UTC']))),
+  };
+  const ports = new ChatPorts(
+    providers,
+    country,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    zones,
+  );
+
+  const first = await ports.accountTimeZones(ids);
+  const second = await ports.accountTimeZones(ids);
+  expect(zones.timeZones).toHaveBeenCalledTimes(1);
+  expect(zones.timeZones.mock.calls[0]?.[0]).toHaveLength(5_000);
+  expect(first.get('user-4999')).toBe('UTC');
+  expect(second.size).toBe(5_000);
+});

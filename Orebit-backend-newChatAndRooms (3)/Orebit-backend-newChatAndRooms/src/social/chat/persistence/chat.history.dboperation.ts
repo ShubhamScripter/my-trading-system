@@ -65,8 +65,9 @@ export class ChatHistoryDbOperation {
     hidden: readonly string[] = [],
     country: string | null = null,
   ): Promise<MessageRow[] | null> {
-    const anchor = await this.prisma.$queryRaw<{ created_at: Date }[]>`
-      SELECT created_at FROM chat.room_messages WHERE id = ${afterId}::uuid AND room_id = ${roomId}::uuid LIMIT 1
+    const anchor = await this.prisma.$queryRaw<{ created_at_text: string }[]>`
+      SELECT ${TIME_TEXT('created_at')} AS created_at_text
+      FROM chat.room_messages WHERE id = ${afterId}::uuid AND room_id = ${roomId}::uuid LIMIT 1
     `;
     if (!anchor[0]) return null;
     const alerts = onlyAlerts
@@ -75,7 +76,7 @@ export class ChatHistoryDbOperation {
     const rows = await this.prisma.$queryRaw<MessageSqlRow[]>`
       ${MESSAGE_SELECT}
       WHERE m.room_id = ${roomId}::uuid
-        AND (m.created_at, m.id) > (${anchor[0].created_at}::timestamptz, ${afterId}::uuid)
+        AND (m.created_at, m.id) > (${anchor[0].created_at_text}::timestamptz, ${afterId}::uuid)
         ${alerts} ${withoutHidden(hidden)} ${notHiddenIn(country)}
       ORDER BY m.created_at ASC, m.id ASC
       LIMIT ${limit + 1}

@@ -12,6 +12,7 @@ import { DmDbOperation } from './dm.dboperation';
 import { dmMemberCache } from './dm.member-cache';
 import {
   DM_MESSAGE_SELECT,
+  DM_MESSAGE_REPORT_SELECT,
   toDmMessage,
   type DmMessageRow,
   type DmMessageSql,
@@ -194,6 +195,12 @@ export class DmMessagesDbOperation {
     return rows[0] ? toDmMessage(rows[0]) : null;
   }
 
+  /** The abuse-report path can read an old DM after its monthly partition moves to chat_archive. */
+  async messageForReport(id: string): Promise<DmMessageRow | null> {
+    const rows = await this.prisma.$queryRaw<DmMessageSql[]>`${DM_MESSAGE_REPORT_SELECT(id)}`;
+    return rows[0] ? toDmMessage(rows[0]) : null;
+  }
+
   // Newest first, `limit + 1` rows; `since` limits it to messages after the member joined.
   async history(
     conversationId: string,
@@ -244,6 +251,15 @@ export class DmMessagesDbOperation {
       ORDER BY m.pinned_at DESC LIMIT 100
     `;
     return rows.map(toDmMessage);
+  }
+
+  async pinnedMessageCount(conversationId: string): Promise<number> {
+    const rows = await this.prisma.$queryRaw<{ count: bigint }[]>`
+      SELECT count(*)::bigint AS count FROM chat.dm_messages
+      WHERE conversation_id = ${conversationId}::uuid AND pinned_at IS NOT NULL
+        AND hidden_at IS NULL AND retracted_at IS NULL
+    `;
+    return Number(rows[0]?.count ?? 0n);
   }
 
   // Moves the read position forward only.

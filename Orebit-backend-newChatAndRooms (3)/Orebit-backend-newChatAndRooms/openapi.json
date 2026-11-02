@@ -11,7 +11,7 @@
   },
   "servers": [
     {
-      "url": "http://localhost:3005",
+      "url": "http://localhost:3001",
       "description": "Local development"
     }
   ],
@@ -10219,7 +10219,7 @@
                 "type": "object"
               },
               "example": {
-                "code": "123456"
+                "code": "{{paymentCode}}"
               }
             }
           }

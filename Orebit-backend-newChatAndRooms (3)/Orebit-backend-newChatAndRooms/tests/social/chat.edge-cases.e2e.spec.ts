@@ -81,6 +81,7 @@ describe.skipIf(!url)('Module 4 and 5 edge cases (real services, scratch databas
             return { status: 'COMPLETED', reference: `T-${reference}` };
           },
           status: async () => ({ state: 'UNKNOWN' }),
+          void: async () => true,
           isRestricted: async () => false,
           revert: async (input: { reference?: string; giftId?: string }) => {
             moved.reverts.push(String(input.reference ?? input.giftId ?? 'revert'));
@@ -91,7 +92,8 @@ describe.skipIf(!url)('Module 4 and 5 edge cases (real services, scratch databas
     ]));
     u = await makeUsers(prisma, NAMES, tag);
     for (const [key, role] of [['boss', 'ADMIN'], ['mod', 'MODERATOR'], ['sup', 'SUPPORT']] as const) {
-      await prisma.$executeRawUnsafe(`INSERT INTO chat.staff_roles (user_id, role) VALUES ($1::uuid, '${role}'::chat."StaffRole")`, u[key].id);
+      await prisma.$executeRaw`INSERT INTO chat.staff_roles (id, user_id, role)
+        VALUES (${uuidv7()}::uuid, ${u[key].id}::uuid, ${role}::chat."StaffRole")`;
       u[key] = { ...u[key], staffRole: role };
     }
     await prisma.$executeRaw`

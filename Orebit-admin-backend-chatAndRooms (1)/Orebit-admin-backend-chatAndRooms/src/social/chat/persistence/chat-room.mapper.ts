@@ -13,7 +13,7 @@ import type {
   VisibilityGroup,
 } from '../chat.types';
 
-/** A room row joined with its access rule and message count, as the room list query returns it. */
+/** A room row joined with its access rule, as the room list query returns it. */
 export interface RoomListRow {
   id: string;
   slug: string;
@@ -34,7 +34,6 @@ export interface RoomListRow {
   ineligibleMode: string | null;
   visibilityGroups: string[] | null;
   visibilityMinLevel: number | null;
-  messageCount: bigint | number | null;
 }
 
 /** A stored room row (chat.rooms) with the access-rule columns the services read. */
@@ -192,6 +191,5 @@ export function toAdminRoom(row: RoomListRow): AdminRoom {
     deletedAt: row.deletedAt ? new Date(row.deletedAt).toISOString() : null,
     // The chat server's runtime stats hold live counts; the list does not.
     onlineCount: 0,
-    messageCount: Number(row.messageCount ?? 0),
   };
 }

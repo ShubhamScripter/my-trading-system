@@ -62,6 +62,12 @@ const DurationSchema = z
   })
   .strict();
 export type RainDuration = z.infer<typeof DurationSchema>;
+const SystemDurationSchema = z
+  .object({
+    value: z.number().int().min(1).max(100_000),
+    unit: z.enum(['MINUTES', 'HOURS']),
+  })
+  .strict();
 
 export function durationSeconds(duration: RainDuration): number {
   if (duration.unit === 'HOURS') return duration.value * 3600;
@@ -205,7 +211,7 @@ export const RainConfigSchema = z
         /** "Rain Amount: Minimum x USD, Maximum x USD". */
         amountUsd: z.object({ min: UsdSchema, max: UsdSchema }).strict(),
         /** "Rain Happens Every: Minimum x Minutes / hours, Maximum x Minutes / hours". */
-        interval: z.object({ min: DurationSchema, max: DurationSchema }).strict(),
+        interval: z.object({ min: SystemDurationSchema, max: SystemDurationSchema }).strict(),
         /** "Number of users to Rain". SPECIFIC uses `count`, PERCENT uses `percent`. */
         recipients: z
           .object({

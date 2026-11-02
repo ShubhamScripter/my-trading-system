@@ -6,7 +6,7 @@ import { ERR } from '../../../contracts';
 import { ProblemException } from '../../../http';
 import { ChatDbOperation } from '../chat.dboperation';
 import { CHAT_REFUSAL_REASONS, LIMITS, PAGE } from '../chat.constants';
-import type { SupportStatus } from '../chat.contract';
+import { SUPPORT_SUBJECT_MAX, type SupportStatus } from '../chat.contract';
 import { ChatModerationService, refuse } from '../chat.moderation.service';
 import { ChatSettingsService } from '../chat.settings';
 import type { ChatUserContext, Page } from '../chat.types';
@@ -60,11 +60,6 @@ export class ChatSupportService {
     private readonly moderation: ChatModerationService,
   ) {}
 
-  // Support chat permits banned users to open tickets and appeal (V2-52 / FR-025).
-  private async assertMayWrite(_user: ChatUserContext): Promise<void> {
-    // Stand-in writes are permitted; Support module owns separate ticket locks if configured.
-  }
-
   private async requireTicket(user: ChatUserContext, ticketId: string): Promise<TicketRow> {
     const ticket = await this.support.ticketOf(ticketId, user.id);
     if (!ticket) throw new ProblemException({ type: ERR.NOT_FOUND, detail: 'Ticket not found' });
@@ -75,15 +70,6 @@ export class ChatSupportService {
     user: ChatUserContext,
     input: { subject: string; content: string },
   ): Promise<TicketView> {
-    await this.assertMayWrite(user);
-    const activeCount = await this.support.countActive(user.id);
-    if (activeCount >= LIMITS.MAX_OPEN_TICKETS_PER_USER) {
-      throw refuse(
-        ERR.FORBIDDEN,
-        CHAT_REFUSAL_REASONS.LIMIT_REACHED,
-        'You have reached the limit of open support tickets',
-      );
-    }
     const content = utility.normalizeContent(input.content);
     const subject = input.subject.trim();
     if (content === '' || subject === '') {
@@ -100,10 +86,10 @@ export class ChatSupportService {
         errors: [{ path: 'content', message: `1 to ${LIMITS.MESSAGE_CHARS} characters` }],
       });
     }
-    if (subject.length > 200) {
+    if (subject.length > SUPPORT_SUBJECT_MAX) {
       throw new ProblemException({
         type: ERR.VALIDATION_FAILED,
-        errors: [{ path: 'subject', message: 'Subject cannot exceed 200 characters' }],
+        errors: [{ path: 'subject', message: `Subject cannot exceed ${SUPPORT_SUBJECT_MAX} characters` }],
       });
     }
     return toTicketView(await this.support.create(user.id, subject, content));
@@ -161,7 +147,6 @@ export class ChatSupportService {
     ticketId: string,
     input: { content: string },
   ): Promise<TicketMessageView> {
-    await this.assertMayWrite(user);
     await this.requireTicket(user, ticketId);
     const content = utility.normalizeContent(input.content);
     if (content === '' || content.length > LIMITS.MESSAGE_CHARS) {

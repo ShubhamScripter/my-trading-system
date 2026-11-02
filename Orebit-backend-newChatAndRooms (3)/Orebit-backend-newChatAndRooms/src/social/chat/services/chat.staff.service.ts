@@ -5,7 +5,7 @@
 import { Injectable } from '@nestjs/common';
 import { ERR } from '../../../contracts';
 import { ProblemException } from '../../../http';
-import { CHAT_REFUSAL_REASONS } from '../chat.constants';
+import { CHAT_REFUSAL_REASONS, SYSTEM_AUTHOR_ID } from '../chat.constants';
 import { ChatBus } from '../realtime/chat.bus';
 import { ChatDbOperation } from '../chat.dboperation';
 import { ChatModerationService, refuse } from '../chat.moderation.service';
@@ -38,7 +38,8 @@ export class ChatStaffService {
     if (!staff.staffRole) {
       throw refuse(ERR.FORBIDDEN, CHAT_REFUSAL_REASONS.STAFF_ONLY, 'Chat staff only');
     }
-    const target = await this.db.findChatUser(targetUserId);
+    const resolvedId = await this.resolveTargetId(targetUserId);
+    const target = await this.db.findChatUser(resolvedId);
     if (!target)
       throw new ProblemException({
         type: ERR.NOT_FOUND,
@@ -54,12 +55,19 @@ export class ChatStaffService {
     return target;
   }
 
+  async resolveTargetId(identifier: string): Promise<string> {
+    const id = await this.db.resolveUserId(identifier);
+    if (!id) throw new ProblemException({ type: ERR.NOT_FOUND, detail: 'User not found' });
+    return id;
+  }
+
   async staffWarn(
     staff: ChatUserContext,
     input: PenaltyReasons & {
       userId: string;
       roomId: string | null;
       note?: string;
+      reportId?: string;
     },
   ): Promise<{ id: string; userId: string; roomId: string | null } | StaffRequested> {
     if (!staff.staffRole)
@@ -70,7 +78,7 @@ export class ChatStaffService {
       return this.gate.report(staff, 'WARN', {
         targetUserId: target.id,
         targetRoomId: input.roomId,
-        payload: { internalReason: input.internalReason, userReason: input.userReason },
+        payload: { internalReason: input.internalReason, userReason: input.userReason, ...(input.reportId ? { reportId: input.reportId } : {}) },
         note: input.note ?? input.internalReason,
       });
     }
@@ -108,6 +116,7 @@ export class ChatStaffService {
       durationHours?: number;
       permanent?: boolean;
       note?: string;
+      reportId?: string;
     },
   ): Promise<
     | {
@@ -132,6 +141,7 @@ export class ChatStaffService {
         payload: {
           internalReason: input.internalReason,
           userReason: input.userReason,
+          ...(input.reportId ? { reportId: input.reportId } : {}),
           ...(permanent ? { permanent: true } : { durationHours: input.durationHours }),
         },
         note: input.note ?? input.internalReason,
@@ -265,7 +275,7 @@ export class ChatReportService {
     type: ReportType,
   ): Promise<void> {
     const dbNow = await this.db.dbNow();
-    await this.moderation.assertNotBanned(user.id, roomId, dbNow);
+    await this.moderation.assertNotBanned(user, roomId, dbNow);
     if (!(await this.records.isActiveReason(reason, type))) {
       throw new ProblemException({
         type: ERR.VALIDATION_FAILED,
@@ -328,8 +338,10 @@ export class ChatReportService {
       messageId,
       messageCreatedAt: message.createdAtText,
       reporterId: user.id,
-      reportedUserId: message.userId,
+      // Admin-created ads have no user creator; persist the message link with a NULL user target.
+      reportedUserId: message.userId === SYSTEM_AUTHOR_ID ? null : message.userId,
       reason: dto.reason,
+      reportType: 'MESSAGE',
       details: dto.details ?? null,
     });
     if (!report)
@@ -374,6 +386,7 @@ export class ChatReportService {
       reporterId: user.id,
       reportedUserId: targetId,
       reason: dto.reason,
+      reportType: 'USER',
       details: dto.details ?? null,
     });
     if (!report)

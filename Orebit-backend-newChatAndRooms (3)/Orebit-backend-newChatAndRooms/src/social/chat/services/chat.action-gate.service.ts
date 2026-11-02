@@ -109,7 +109,7 @@ export class ChatActionGate {
 
   // A chat-banned user may still mute and block, but not DM, send money, advertise or rain.
   async assertStanding(user: ChatUserContext, command: ChatCommand, roomId: string | null, dbNow: Date): Promise<void> {
-    if (NEEDS_GOOD_STANDING.includes(command)) await this.moderation.assertNotBanned(user.id, roomId, dbNow);
+    if (NEEDS_GOOD_STANDING.includes(command)) await this.moderation.assertNotBanned(user, roomId, dbNow);
   }
 
   // The pace of this user for this kind of action, from the admin's chat limits.

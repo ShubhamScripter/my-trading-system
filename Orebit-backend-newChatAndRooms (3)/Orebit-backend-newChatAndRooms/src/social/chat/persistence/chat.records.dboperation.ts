@@ -318,16 +318,17 @@ export class ChatRecordsDbOperation {
     // The message's created_at as database text (microseconds), never a JavaScript Date.
     messageCreatedAt: string | null;
     reporterId: string;
-    reportedUserId: string;
+    reportedUserId: string | null;
     reason: string;
+    reportType?: ReportType;
     details: string | null;
   }): Promise<{ id: string; createdAt: Date } | null> {
     const id = uuidv7();
     try {
       const rows = await this.prisma.$queryRaw<{ created_at: Date }[]>`
-        INSERT INTO chat.chat_message_reports (id, message_id, message_created_at, reporter_id, reported_user_id, reason, details, status)
+        INSERT INTO chat.chat_message_reports (id, message_id, message_created_at, reporter_id, reported_user_id, reason, report_type, details, status)
         VALUES (${id}::uuid, ${data.messageId}::uuid, ${data.messageCreatedAt}::timestamptz, ${data.reporterId}::uuid,
-                ${data.reportedUserId}::uuid, ${data.reason}, ${data.details}, 'PENDING')
+                ${data.reportedUserId}::uuid, ${data.reason}, ${data.reportType ?? 'MESSAGE'}, ${data.details}, 'PENDING')
         RETURNING created_at
       `;
       return { id, createdAt: rows[0]!.created_at };
@@ -348,10 +349,10 @@ export class ChatRecordsDbOperation {
     const id = uuidv7();
     try {
       const rows = await this.prisma.$queryRaw<{ created_at: Date }[]>`
-        INSERT INTO chat.chat_message_reports (id, dm_message_id, dm_message_created_at, reporter_id, reported_user_id, reason, details, status)
+        INSERT INTO chat.chat_message_reports (id, dm_message_id, dm_message_created_at, reporter_id, reported_user_id, reason, report_type, details, status)
         SELECT ${id}::uuid, m.id, m.created_at, ${data.reporterId}::uuid, ${data.reportedUserId}::uuid,
-                ${data.reason}, ${data.details}, 'PENDING'
-        FROM chat.dm_messages m WHERE m.id = ${data.dmMessageId}::uuid
+                ${data.reason}, 'MESSAGE', ${data.details}, 'PENDING'
+        FROM chat.dm_message_for_report(${data.dmMessageId}::uuid, NULL::timestamptz) m
         RETURNING created_at
       `;
       return { id, createdAt: rows[0]!.created_at };

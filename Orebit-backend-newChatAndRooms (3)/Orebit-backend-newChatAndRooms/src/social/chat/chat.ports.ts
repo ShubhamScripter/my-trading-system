@@ -10,6 +10,8 @@ export interface CountryPort {
 export interface PremiumPort {
   // Ids of the user's ACTIVE premium plans ([] = none), or null when not connected.
   activePlanIds(userId: string): Promise<string[] | null>;
+  // Whether the user's subscription disables chat ads.
+  hasDisableAllAds(userId: string): Promise<boolean>;
 }
 export interface KycPort {
   // The user's KYC level (0 = none), or null when not connected.
@@ -44,7 +46,7 @@ export interface LevelPort {
 }
 export interface TimeZonePort {
   // The IANA time zone of the user's account (Auth / User settings, ), or null when not set.
-  timeZone(userId: string): Promise<string | null>;
+  timeZones(userIds: readonly string[]): Promise<Map<string, string | null>>;
 }
 
 export const CHAT_COUNTRY_PORT = Symbol('CHAT_COUNTRY_PORT');
@@ -79,6 +81,7 @@ export interface PortFacts {
 
 @Injectable()
 export class ChatPorts {
+  private readonly zoneCache = new Map<string, { value: string | null; at: number }>();
   constructor(
     private readonly testProviders: TestProviders,
     private readonly registrationCountry: RegistrationCountryProvider,
@@ -97,14 +100,28 @@ export class ChatPorts {
   // The account time zone of each user, null where it is unknown or the Auth / User module is not connected. Quiet
 // hours apply only to users with a zone: there is no UTC fallback.
   async accountTimeZones(userIds: readonly string[]): Promise<Map<string, string | null>> {
-    const out = new Map<string, string | null>(userIds.map((id) => [id, null]));
-    if (!this.zones) return out;
+    const now = Date.now();
+    const out = new Map<string, string | null>();
+    const missing: string[] = [];
+    for (const id of userIds) {
+      const hit = this.zoneCache.get(id);
+      if (hit && now - hit.at < 60_000) out.set(id, hit.value);
+      else missing.push(id);
+    }
+    if (!this.zones) {
+      for (const id of missing) out.set(id, null);
+      return out;
+    }
     const zones = this.zones;
-    await Promise.all(
-      userIds.map(async (id) => {
-        out.set(id, await zones.timeZone(id).catch(() => null));
-      }),
-    );
+    if (missing.length > 0) {
+      const batch = await zones.timeZones(missing).catch(() => new Map<string, string | null>());
+      for (const id of missing) {
+        const value = batch.get(id) ?? null;
+        out.set(id, value);
+        this.zoneCache.set(id, { value, at: now });
+      }
+    }
+    if (this.zoneCache.size > 50_000) this.zoneCache.clear();
     return out;
   }
 

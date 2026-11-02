@@ -144,6 +144,36 @@ describe.skipIf(!url)('admin chat on a real database', () => {
     });
   });
 
+  it('shows archived DM content in the admin report list', async () => {
+    await prisma.$executeRaw`CREATE TABLE IF NOT EXISTS chat_archive.dm_messages_2000_01
+      (LIKE chat.dm_messages INCLUDING ALL)`;
+    const dmMessageId = randomUUID();
+    const reportId = randomUUID();
+    const messageContent = 'archived report evidence';
+    const createdAt = new Date('2000-01-15T12:00:00Z');
+    const [reason] = await prisma.$queryRaw<{ code: string }[]>`
+      SELECT code FROM chat.report_reasons WHERE report_type = 'MESSAGE' AND is_active LIMIT 1
+    `;
+    await prisma.$executeRaw`
+      INSERT INTO chat_archive.dm_messages_2000_01
+        (id, conversation_id, sender_id, content, type, metadata, created_at)
+      VALUES (${dmMessageId}::uuid, ${randomUUID()}::uuid, ${author}::uuid,
+              ${messageContent}, 'TEXT', '{}'::jsonb, ${createdAt}::timestamptz)
+    `;
+    await prisma.$executeRaw`
+      INSERT INTO chat.chat_message_reports
+        (id, dm_message_id, dm_message_created_at, reporter_id, reported_user_id, reason, report_type)
+      VALUES (${reportId}::uuid, ${dmMessageId}::uuid, ${createdAt}::timestamptz,
+              ${reporter}::uuid, ${author}::uuid, ${reason!.code}, 'MESSAGE')
+    `;
+    const reports = await moderation.getReports({ status: 'PENDING', limit: 100 });
+    expect(reports.find((report) => report.id === reportId)).toMatchObject({
+      dmMessageId,
+      dmMessageArchived: true,
+      messageContent,
+    });
+  });
+
   describe('Modules 4–5: editing penalties, room access and reverts', () => {
     it('a live ban gets a new end and reason; the old values come back for the log', async () => {
       const id = randomUUID();

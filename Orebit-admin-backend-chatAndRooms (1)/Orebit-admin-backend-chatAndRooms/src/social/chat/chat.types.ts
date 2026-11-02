@@ -111,7 +111,6 @@ export interface AdminRoom {
   createdAt: string;
   deletedAt: string | null;
   onlineCount: number;
-  messageCount: number;
 }
 
 // Reports
@@ -125,14 +124,15 @@ export interface ChatReport {
   messageId: string | null;
   /** A reported DM or group message (Module 8); its conversation. */
   dmMessageId: string | null;
+  dmMessageArchived: boolean;
   conversationId: string | null;
   messageContent: string | null;
   roomId: string | null;
   roomName: string | null;
   reporterId: string;
   reporterUsername: string;
-  reportedUserId: string;
-  reportedUsername: string;
+  reportedUserId: string | null;
+  reportedUsername: string | null;
   reason: string;
   details: string | null;
   status: ReportStatus;

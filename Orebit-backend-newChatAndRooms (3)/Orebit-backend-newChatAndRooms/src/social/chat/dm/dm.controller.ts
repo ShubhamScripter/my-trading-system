@@ -296,6 +296,7 @@ export class DmController {
     // The people to invite go out as invites after the group exists (the invite rules are the invites service's).
     const user = await this.user(req);
     const { inviteUserIds, ...details } = body;
+    if (inviteUserIds?.length) await this.groupInvites.preflightCreateWithInvites();
     const created = await this.groups.create(user, details);
     const invited = inviteUserIds?.length
       ? await this.groupInvites.invite(user, created.groupId, inviteUserIds)

@@ -22,7 +22,11 @@ export class ChatAdsSettlementService {
   async award(adId: string, userId: string, usd: string): Promise<StoredReward | null> {
     try {
       const reward = rewardsFor((await this.settings.global()).rewards.advert, usd);
-      if (reward.exp === 0 && reward.currency === 0) return null;
+      if (reward.exp === 0 && reward.currency === 0) {
+        const stored: StoredReward = { ...reward, awarded: true };
+        await this.ads.setRewards(adId, { ...stored });
+        return stored;
+      }
       const port = await this.ports.rewards();
       const awarded = port
         ? await port.award({

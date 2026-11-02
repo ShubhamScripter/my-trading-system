@@ -51,6 +51,18 @@ export class ChatLimitationsDbOperation {
         UNION ALL
         SELECT id, 'GIFT_REVERTED', room_id, reverted_at, NULL::timestamptz, 'REVERTED', NULL::text
         FROM chat.gift_transfers WHERE sender_id = ${userId}::uuid AND status = 'REVERTED' AND reverted_at IS NOT NULL
+        UNION ALL
+        SELECT id, 'GROUP_BAN', conversation_id, created_at, NULL::timestamptz,
+               CASE WHEN removed_at IS NULL THEN 'ACTIVE' ELSE 'LIFTED' END, reason
+        FROM chat.dm_group_bans WHERE user_id = ${userId}::uuid
+        UNION ALL
+        SELECT id, 'ROOM_EXCLUDED', room_id, created_at, NULL::timestamptz,
+               CASE WHEN removed_at IS NULL THEN 'ACTIVE' ELSE 'LIFTED' END, NULL::text
+        FROM chat.room_excluded_users WHERE user_id = ${userId}::uuid
+        UNION ALL
+        SELECT id, 'ROOM_INCLUDED', room_id, created_at, NULL::timestamptz,
+               CASE WHEN removed_at IS NULL THEN 'ACTIVE' ELSE 'LIFTED' END, NULL::text
+        FROM chat.room_included_users WHERE user_id = ${userId}::uuid
       ) t
       WHERE true ${after} ${from} ${to}
       ORDER BY starts_at DESC, id DESC

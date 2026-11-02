@@ -62,6 +62,12 @@ const DurationSchema = z
   })
   .strict();
 export type RainDuration = z.infer<typeof DurationSchema>;
+const SystemDurationSchema = z
+  .object({
+    value: z.number().int().min(1).max(100_000),
+    unit: z.enum(['MINUTES', 'HOURS']),
+  })
+  .strict();
 
 export function durationSeconds(duration: RainDuration): number {
   if (duration.unit === 'HOURS') return duration.value * 3600;
@@ -205,7 +211,7 @@ export const RainConfigSchema = z
         /** "Rain Amount: Minimum x USD, Maximum x USD". */
         amountUsd: z.object({ min: UsdSchema, max: UsdSchema }).strict(),
         /** "Rain Happens Every: Minimum x Minutes / hours, Maximum x Minutes / hours". */
-        interval: z.object({ min: DurationSchema, max: DurationSchema }).strict(),
+        interval: z.object({ min: SystemDurationSchema, max: SystemDurationSchema }).strict(),
         /** "Number of users to Rain". SPECIFIC uses `count`, PERCENT uses `percent`. */
         recipients: z
           .object({
@@ -478,6 +484,14 @@ export const RainRevertFilterSchema = z
     path: ['to'],
   });
 export type RainRevertFilter = z.infer<typeof RainRevertFilterSchema>;
+
+export const ManualSystemRainSchema = z.object({
+  currency: CodeSchema,
+  usdAmount: z.string().trim().regex(/^\d{1,12}(\.\d{1,8})?$/),
+  roomId: UuidSchema,
+  recipients: z.number().int().min(1).max(1000),
+}).strict();
+export type ManualSystemRain = z.infer<typeof ManualSystemRainSchema>;
 
 /**
  * "For User Rains: Refund user to the person raining [Does not include fee cut by us] / Do nothing", and "For Users

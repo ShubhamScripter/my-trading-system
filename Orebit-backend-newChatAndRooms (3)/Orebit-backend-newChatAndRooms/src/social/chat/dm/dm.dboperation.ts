@@ -4,6 +4,7 @@
 // dm.groups.dboperation.ts.
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { isUuid } from '../chat.utility';
 import { PrismaService } from '../../../../db/client';
 import { uuidv7 } from '../../../utils/public.utils';
 import { TIME_TEXT, isUniqueViolation, type Db } from '../persistence/chat.sql';
@@ -103,15 +104,6 @@ export class DmDbOperation {
     return rows[0]?.created_by ?? null;
   }
 
-  // Conversations of either kind this user started in the last `hours` (the new-DM limit counts DIRECT ones).
-  async newDirectCount(userId: string, hours: number): Promise<number> {
-    const rows = await this.prisma.$queryRaw<{ n: number }[]>`
-      SELECT count(*)::int AS n FROM chat.dm_conversations
-      WHERE created_by = ${userId}::uuid AND kind = 'DIRECT' AND created_at > now() - make_interval(hours => ${hours}::int)
-    `;
-    return rows[0]?.n ?? 0;
-  }
-
   async insertMember(
     conversationId: string,
     userId: string,
@@ -146,20 +138,51 @@ export class DmDbOperation {
     return rows[0] ? toMember(rows[0]) : null;
   }
 
+  // Resolves a user supplied to a group action through membership first, so suspended accounts still work by username.
+  async memberIdByHandle(conversationId: string, handle: string): Promise<string | null> {
+    const value = handle.trim().replace(/^@/, '');
+    const rows = isUuid(value)
+      ? await this.prisma.$queryRaw<{ user_id: string }[]>`
+          SELECT user_id FROM chat.dm_members
+          WHERE conversation_id = ${conversationId}::uuid AND user_id = ${value.toLowerCase()}::uuid
+          LIMIT 1
+        `
+      : await this.prisma.$queryRaw<{ user_id: string }[]>`
+          SELECT dm.user_id FROM chat.dm_members dm
+          JOIN identity.users u ON u.id = dm.user_id AND u.deleted_at IS NULL
+          WHERE dm.conversation_id = ${conversationId}::uuid AND u.username_lower = ${value.toLowerCase()}
+          LIMIT 1
+        `;
+    return rows[0]?.user_id ?? null;
+  }
+
   // Members in the given states (all states when empty), oldest first.
-  async members(conversationId: string, states: readonly MemberState[] = []): Promise<MemberRow[]> {
+  async members(conversationId: string, states: readonly MemberState[] = []): Promise<readonly MemberRow[]> {
     let all = dmMemberCache.get(conversationId);
     if (!all) {
+      const cacheVersion = dmMemberCache.version();
       const rows = await this.prisma.$queryRaw<MemberSql[]>`
         ${MEMBER_SELECT} WHERE dm.conversation_id = ${conversationId}::uuid
         ORDER BY dm.joined_at, dm.user_id
-        LIMIT 100000
+        LIMIT 100001
       `;
+      if (rows.length > 100_000) {
+        throw new Error('DM conversation exceeds the 100000-member realtime limit');
+      }
       const mapped = rows.map(toMember);
-      dmMemberCache.set(conversationId, mapped);
+      dmMemberCache.setIfVersion(conversationId, mapped, cacheVersion);
       all = mapped;
     }
-    return states.length === 0 ? [...all] : all.filter((m) => states.includes(m.state));
+    return states.length === 0 ? all : all.filter((m) => states.includes(m.state));
+  }
+
+  async activeMembersAmong(conversationId: string, userIds: readonly string[]): Promise<Set<string>> {
+    if (userIds.length === 0) return new Set();
+    const rows = await this.prisma.$queryRaw<{ user_id: string }[]>`
+      SELECT user_id FROM chat.dm_members
+      WHERE conversation_id = ${conversationId}::uuid AND state = 'ACTIVE' AND user_id = ANY(${[...userIds]}::uuid[])
+    `;
+    return new Set(rows.map((row) => row.user_id));
   }
 
   // One page of the members who are in the conversation now (ACTIVE), oldest first, for the group member list

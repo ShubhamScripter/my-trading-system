@@ -19,9 +19,9 @@ export class ChatReportStatsRoutes {
   constructor(private readonly stats: ChatReportStatsDbOperation) {}
 
   @Get('report-stats')
-  async reportStats(@Query() query: unknown): Promise<SuccessEnvelope<ReportStats & { thankYouSent: number | null }>> {
+  async reportStats(@Query() query: unknown): Promise<SuccessEnvelope<ReportStats>> {
     const input = parseDto(ReportStatsQuerySchema, query);
     const stats = await this.stats.stats({ from: input.from ?? null, to: input.to ?? null, top: input.top });
-    return ok({ ...stats, thankYouSent: null });
+    return ok(stats);
   }
 }

@@ -310,9 +310,11 @@ export class ChatStaffDbOperation {
   }
 
   // "See Penalised / Banned Users List [Chat banned / penalty only]": live bans, newest first.
-  async activeBans(userId: string | null, limit: number, before: Date | null) {
+  async activeBans(userId: string | null, limit: number, before: Cursor | null) {
     const user = userId ? Prisma.sql`AND b.user_id = ${userId}::uuid` : Prisma.empty;
-    const cursor = before ? Prisma.sql`AND b.banned_at < ${before}::timestamptz` : Prisma.empty;
+    const cursor = before
+      ? Prisma.sql`AND (b.banned_at, b.id) < (${before.createdAt}::timestamptz, ${before.id}::uuid)`
+      : Prisma.empty;
     return this.prisma.$queryRaw<
       {
         id: string;
@@ -324,16 +326,43 @@ export class ChatStaffDbOperation {
         moderator_id: string | null;
         admin_id: string | null;
         banned_at: Date;
+        banned_at_text: string;
         expires_at: Date | null;
       }[]
     >`
-      SELECT b.id, b.user_id, u.username, b.room_id, b.internal_reason, b.user_reason, b.moderator_id, b.admin_id, b.banned_at, b.expires_at
+      SELECT b.id, b.user_id, u.username, b.room_id, b.internal_reason, b.user_reason, b.moderator_id, b.admin_id,
+             b.banned_at, ${TIME_TEXT('b.banned_at')} AS banned_at_text, b.expires_at
       FROM chat.user_bans b
       JOIN identity.users u ON u.id = b.user_id AND u.deleted_at IS NULL
       WHERE b.is_active AND (b.expires_at IS NULL OR b.expires_at > now()) ${user} ${cursor}
       ORDER BY b.banned_at DESC, b.id DESC
-      LIMIT ${limit}
+      LIMIT ${limit + 1}
     `;
+  }
+
+  async activeRestrictionPage(userId: string | null, limit: number, before: Cursor | null) {
+    const user = userId
+      ? Prisma.sql`AND target_type = 'USER' AND target_value = ${userId}`
+      : Prisma.empty;
+    const cursor = before
+      ? Prisma.sql`AND (created_at, id) < (${before.createdAt}::timestamptz, ${before.id}::uuid)`
+      : Prisma.empty;
+    const rows = await this.prisma.$queryRaw<(RestrictionSqlRow & { created_at_text: string })[]>`
+      SELECT id, target_type, target_value, kind, commands, room_id, internal_reason, user_reason,
+             created_by, created_by_admin, created_by_role, created_at, expires_at,
+             ${TIME_TEXT('created_at')} AS created_at_text
+      FROM chat.user_restrictions
+      WHERE lifted_at IS NULL AND (expires_at IS NULL OR expires_at > now()) ${user} ${cursor}
+      ORDER BY created_at DESC, id DESC
+      LIMIT ${limit + 1}
+    `;
+    const hasMore = rows.length > limit;
+    const page = rows.slice(0, limit);
+    const last = page.at(-1);
+    return {
+      rows: page.map((row) => ({ ...toRestriction(row), createdAtText: row.created_at_text })),
+      nextAfter: hasMore && last ? { createdAt: last.created_at_text, id: last.id } : null,
+    };
   }
 
   async usernames(ids: readonly string[]): Promise<Map<string, string>> {
@@ -365,14 +394,14 @@ export class ChatStaffDbOperation {
     `;
     if (action === 'REMOVE') {
       await db.$executeRaw`
-        INSERT INTO chat.room_excluded_users (room_id, user_id, created_by)
-        VALUES (${roomId}::uuid, ${userId}::uuid, ${by}::uuid)
+        INSERT INTO chat.room_excluded_users (id, room_id, user_id, created_by)
+        VALUES (${uuidv7()}::uuid, ${roomId}::uuid, ${userId}::uuid, ${by}::uuid)
       `;
     }
     if (action === 'ADD') {
       await db.$executeRaw`
-        INSERT INTO chat.room_included_users (room_id, user_id, created_by)
-        VALUES (${roomId}::uuid, ${userId}::uuid, ${by}::uuid)
+        INSERT INTO chat.room_included_users (id, room_id, user_id, created_by)
+        VALUES (${uuidv7()}::uuid, ${roomId}::uuid, ${userId}::uuid, ${by}::uuid)
       `;
     }
   }

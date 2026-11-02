@@ -85,6 +85,30 @@ describe('ChatPresenceService', () => {
     ]);
   });
 
+  it('uses the same ordering for usernames and the paging cursor', () => {
+    const { presence } = harness();
+    for (const [id, username] of [
+      ['u0', 'a_b'],
+      ['u1', 'a1'],
+      ['u2', 'a2'],
+      ['u3', 'ab'],
+      ['u4', 'a_c'],
+      ['u5', 'a0'],
+    ] as const) {
+      presence.add(socket(id), member(id, username));
+      presence.joinRoom('r', id);
+    }
+    const seen: string[] = [];
+    let cursor: string | null = null;
+    do {
+      const page = presence.members('r', 1, cursor);
+      seen.push(...page.items.map((row) => row.username));
+      cursor = page.nextCursor;
+    } while (cursor);
+    expect(seen).toHaveLength(6);
+    expect(new Set(seen)).toEqual(new Set(['a_b', 'a1', 'a2', 'ab', 'a_c', 'a0']));
+  });
+
   it('refreshes every marker with a TTL in one pipeline', async () => {
     const { presence, redis } = harness();
     presence.add(socket('u1'), member('u1', 'ada'));

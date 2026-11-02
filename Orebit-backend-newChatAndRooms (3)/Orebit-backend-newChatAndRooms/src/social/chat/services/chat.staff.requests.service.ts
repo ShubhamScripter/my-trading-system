@@ -11,6 +11,7 @@ import { STAFF_PERMISSIONS } from '../chat.features.contract';
 import { refuse } from '../chat.moderation.service';
 import { ChatService } from '../chat.service';
 import { ChatStaffDbOperation } from '../persistence/chat.staff.dboperation';
+import { ChatStaffQueueDbOperation } from '../persistence/chat.staff-queue.dboperation';
 import { ChatBus } from '../realtime/chat.bus';
 import { ChatDelivery } from '../realtime/chat.delivery';
 import type { ChatUserContext } from '../chat.types';
@@ -28,6 +29,7 @@ export class ChatStaffRequestsService {
   constructor(
     private readonly gate: ChatStaffGate,
     private readonly staffDb: ChatStaffDbOperation,
+    private readonly queueDb: ChatStaffQueueDbOperation,
     private readonly chat: ChatService,
     private readonly staff: ChatStaffService,
     private readonly tools: ChatStaffToolsService,
@@ -146,7 +148,12 @@ export class ChatStaffRequestsService {
     }
     let result: unknown = null;
     if (input.approve) {
+      const reportId = typeof request.payload.reportId === 'string' ? request.payload.reportId : null;
+      const reportAction = request.permission === 'DELETE_MESSAGES' ? 'RETRACT_MESSAGE' : request.permission;
       try {
+        if (reportId && !(await this.queueDb.resolveReport(reportId, reportAction, user.id))) {
+          throw refuse(ERR.FORBIDDEN, CHAT_REFUSAL_REASONS.ALREADY_REPORTED, 'The linked report is already resolved', {}, 409);
+        }
         result = await this.carryOut(
           user,
           request.permission,
@@ -156,6 +163,7 @@ export class ChatStaffRequestsService {
           note,
         );
       } catch (err: unknown) {
+        if (reportId) await this.queueDb.reopenReport(reportId, user.id);
         await this.staffDb.reopenRequest(requestId);
         throw err;
       }
@@ -284,6 +292,7 @@ export class ChatStaffRequestsService {
           ...(num(payload.durationHours) !== undefined
             ? { durationHours: num(payload.durationHours) }
             : {}),
+          ...(payload.permanent === true ? { permanent: true } : {}),
         });
     }
   }

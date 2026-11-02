@@ -352,11 +352,7 @@ export class ChatService {
       roomIds = [dto.roomId];
     } else {
       // Every room that is neither deleted nor disabled.
-      roomIds = typeof this.rooms.getActiveRoomIds === 'function'
-        ? await this.rooms.getActiveRoomIds()
-        : (await this.rooms.getRooms())
-            .filter((room) => room.deletedAt === null && room.status !== 'DISABLED')
-            .map((room) => room.id);
+      roomIds = await this.rooms.getActiveRoomIds();
     }
 
     // Broadcast alerts across rooms in a single transaction with audit logging.

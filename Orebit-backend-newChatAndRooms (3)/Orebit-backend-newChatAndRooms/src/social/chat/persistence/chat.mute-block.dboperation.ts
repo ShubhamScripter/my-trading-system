@@ -5,6 +5,7 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../../db/client';
+import { uuidv7 } from '../../../utils/public.utils';
 import { TIME_TEXT } from './chat.sql';
 import type { Cursor } from '../chat.utility';
 
@@ -40,9 +41,9 @@ export class ChatMuteBlockDbOperation {
       `;
       if (present[0]?.has) return 'EXISTS';
       if ((present[0]?.n ?? 0) >= max) return 'FULL';
-      await tx.$executeRaw`INSERT INTO ${table} (user_id, target_id) VALUES (${userId}::uuid, ${targetId}::uuid)`;
+      await tx.$executeRaw`INSERT INTO ${table} (id, user_id, target_id) VALUES (${uuidv7()}::uuid, ${userId}::uuid, ${targetId}::uuid)`;
       return 'ADDED';
-    });
+    }, { maxWait: 5_000, timeout: 10_000 });
   }
 
   // Removes the pair; false when it was not there.

@@ -14,6 +14,7 @@ import { WsValidationPipe } from '../../src/social/chat/chat.ws.pipe';
 import { ChatBus } from '../../src/social/chat/realtime/chat.bus';
 import { ChatPresenceService } from '../../src/social/chat/chat.presence.service';
 import { ChatDelivery } from '../../src/social/chat/realtime/chat.delivery';
+import { TIMERS } from '../../src/social/chat/chat.constants';
 import type { MessageRow } from '../../src/social/chat/chat.types';
 
 describe('gateway wiring', () => {
@@ -237,6 +238,47 @@ describe('connections', () => {
     await gateway.handleJoinRoom({ roomId: 'a' } as never, socket as never);
     await gateway.handleJoinRoom({ roomId: 'b' } as never, socket as never);
     expect(socket.rooms).toEqual(new Set(['user:u1', 'room:b', 'room:b:country:IN']));
+  });
+
+  it('refuses queued sends with a typed retryable server_busy acknowledgement', async () => {
+    const { gateway } = harness();
+    (gateway as unknown as { pendingSends: number }).pendingSends = TIMERS.MAX_PENDING_SENDS;
+    const ack = await gateway.handleSendMessage({ content: 'hello' } as never, makeSocket('u1') as never);
+    expect(ack).toMatchObject({
+      ok: false,
+      error: { type: 'server_busy', retryAfterSeconds: 1, extra: { reason: 'server_busy' } },
+    });
+  });
+
+  it('keeps infrastructure handshake failures distinct from sign-in failures', async () => {
+    const { gateway } = harness();
+    (gateway as unknown as { auth: unknown }).auth = {
+      authenticateHandshake: vi.fn(async () => {
+        throw new Error('database unavailable');
+      }),
+    };
+    const socket = makeSocket('u1') as unknown as FakeSocket & {
+      handshake: { headers: Record<string, string>; auth: Record<string, unknown>; address: string };
+    };
+    socket.handshake = { headers: {}, auth: {}, address: '127.0.0.1' };
+    const next = vi.fn();
+    await (gateway as unknown as { handshake: (socket: unknown, next: (err?: Error) => void) => Promise<void> })
+      .handshake(socket, next);
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({ message: 'session_store_unavailable' }));
+  });
+
+  it('maps transient Prisma transaction timeouts to server_busy', async () => {
+    const { gateway } = harness();
+    (gateway as unknown as { chat: unknown }).chat = {
+      sendMessage: vi.fn(async () => {
+        throw { code: 'P2028' };
+      }),
+    };
+    const ack = await gateway.handleSendMessage(
+      { content: 'hello', clientMessageId: '123e4567-e89b-42d3-a456-426614174000' } as never,
+      makeSocket('u1') as never,
+    );
+    expect(ack).toMatchObject({ ok: false, error: { type: 'server_busy' } });
   });
 });
 

@@ -130,7 +130,6 @@ export class ChatRoomDbOperation {
         ar.ineligible_mode::text        AS "ineligibleMode",
         ar.visibility_groups            AS "visibilityGroups",
         ar.visibility_min_level         AS "visibilityMinLevel",
-        0::bigint                       AS "messageCount"
       FROM chat.rooms r
       LEFT JOIN chat.room_access_rules ar ON ar.room_id = r.id
       ORDER BY r.created_at ASC
@@ -388,7 +387,7 @@ export class ChatRoomDbOperation {
         roomName: row.roomName ?? '',
         userId: row.userId,
         // System alerts and broadcasts are written by the system author, which is not a user row.
-        username: row.username ?? (row.userId === SYSTEM_AUTHOR_ID ? 'OREBiT' : 'Unknown'),
+        username: row.username ?? (row.userId === SYSTEM_AUTHOR_ID ? 'OREBiT' : 'Deleted user'),
         content: row.content,
         type: row.type ?? 'TEXT',
         metadata: row.metadata ?? {},

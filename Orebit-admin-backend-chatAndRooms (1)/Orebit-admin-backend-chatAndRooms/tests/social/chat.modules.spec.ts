@@ -234,7 +234,17 @@ describe('ChatMoneyService: reverting ads and gifts', () => {
       revertGifts: vi.fn().mockResolvedValue({ count: 3, usd: '42.00' }),
     };
     moderation = moderationFake();
-    service = new ChatMoneyService(money, moderation, {} as never, {} as never);
+    const settings = {
+      getDocument: vi.fn(async () => ({
+        document: {
+          global: {
+            ads: { pendingPaymentMinutes: 10, jobStaleMinutes: 10, jobPageSize: 50, jobBudgetSeconds: 60 },
+            gifts: { processingStaleMinutes: 10 },
+          },
+        },
+      })),
+    };
+    service = new ChatMoneyService(money, moderation, {} as never, settings as never);
   });
 
   it('a dry run only lists the ads', async () => {
@@ -259,7 +269,7 @@ describe('ChatMoneyService: reverting ads and gifts', () => {
       }),
     );
     expect(money.cancelAd).toHaveBeenCalledTimes(1);
-    expect(money.cancelAd).toHaveBeenCalledWith('ad-running', ADMIN, 'Reverted by admin', 'UNUSED');
+    expect(money.cancelAd).toHaveBeenCalledWith('ad-running', ADMIN, frame.reason, 'UNUSED');
     expect(money.markAdRewardsRevert).toHaveBeenCalledWith(['ad-running', 'ad-done']);
     expect(moderation.notify).toHaveBeenCalledWith({ kind: 'ad', adId: 'ad-running' });
     expect(result).toEqual({ dryRun: false, count: 2, stopped: 1, rewardsReverted: 2 });

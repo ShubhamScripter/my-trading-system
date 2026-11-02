@@ -133,6 +133,37 @@ export class ChatMoneyDbOperation {
     return id;
   }
 
+  async revertJobs(limit: number) {
+    const rows = await this.prisma.$queryRaw<{
+      id: string; kind: string; status: string; result: unknown; error: string | null; created_by: string;
+      created_at: Date; started_at: Date | null; finished_at: Date | null; progress: unknown;
+    }[]>`
+      SELECT id, kind, status, result, error, created_by, created_at, started_at, finished_at, progress
+      FROM chat.money_revert_jobs ORDER BY created_at DESC, id DESC LIMIT ${limit}
+    `;
+    return rows.map((row) => ({
+      id: row.id, kind: row.kind, status: row.status, result: row.result, error: row.error,
+      createdBy: row.created_by, createdAt: iso(row.created_at), startedAt: iso(row.started_at),
+      finishedAt: iso(row.finished_at), progress: row.progress,
+    }));
+  }
+
+  async revertJob(id: string) {
+    const rows = await this.prisma.$queryRaw<{
+      id: string; kind: string; status: string; filter: unknown; result: unknown; error: string | null;
+      created_by: string; created_at: Date; started_at: Date | null; finished_at: Date | null; progress: unknown;
+    }[]>`
+      SELECT id, kind, status, filter, result, error, created_by, created_at, started_at, finished_at, progress
+      FROM chat.money_revert_jobs WHERE id = ${id}::uuid
+    `;
+    const row = rows[0];
+    return row ? {
+      id: row.id, kind: row.kind, status: row.status, filter: row.filter, result: row.result, error: row.error,
+      createdBy: row.created_by, createdAt: iso(row.created_at), startedAt: iso(row.started_at),
+      finishedAt: iso(row.finished_at), progress: row.progress,
+    } : null;
+  }
+
   /** "Reverting will also revert EXP and Stars Earned": the chat server takes them back. */
   async markAdRewardsRevert(ids: string[]): Promise<number> {
     if (ids.length === 0) return 0;

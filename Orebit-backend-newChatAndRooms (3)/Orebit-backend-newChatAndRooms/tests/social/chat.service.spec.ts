@@ -344,6 +344,16 @@ describe('reports', () => {
     );
   });
 
+  it('reports a system-authored ad message without inventing a reported user', async () => {
+    const { reports: service, db } = harness({
+      message: row({ userId: '00000000-0000-0000-0000-000000000000', type: 'AD' }),
+    });
+    await service.reportMessage(USER, 'm1', { reason: 'SPAM' });
+    expect(db.insertReport).toHaveBeenCalledWith(
+      expect.objectContaining({ messageId: 'm1', reportedUserId: null }),
+    );
+  });
+
   it('over the hourly limit is 429', async () => {
     const { reports: service, db } = harness({ message: row({ userId: 'u2' }) });
     db.recentReportCount.mockResolvedValueOnce(10);

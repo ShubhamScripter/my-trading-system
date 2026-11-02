@@ -1,5 +1,6 @@
 import { Injectable, Optional } from '@nestjs/common';
 import { z } from 'zod';
+import { Prisma } from '@prisma/client';
 import { config as appConfig } from '../../config';
 import { ERR } from '../../contracts';
 import { ProblemException, parseDto } from '../../http';
@@ -63,8 +64,33 @@ export const JobsQuerySchema = z
   .strict();
 
 export const RepeatsQuerySchema = z
-  .object({ status: z.enum(['SCHEDULED', 'RUNNING', 'FINISHED', 'FAILED', 'CANCELLED']).optional(), user: HANDLE.optional(), limit: LIMIT })
+  .object({ status: z.enum(['SCHEDULED', 'RUNNING', 'DONE', 'FAILED', 'CANCELLED']).optional(), user: HANDLE.optional(), limit: LIMIT })
   .strict();
+
+const ManualSystemRainSchema = z.object({
+  currency: z.string().trim().regex(/^[A-Z0-9]{2,12}$/),
+  usdAmount: z.string().trim().regex(/^\d{1,12}(\.\d{1,8})?$/),
+  roomId: UUID,
+  recipients: z.number().int().min(1).max(1000),
+}).strict();
+
+const RainDetailQuerySchema = RainIdSchema.extend({
+  recipientLimit: z.coerce.number().int().min(1).max(100).default(50),
+  recipientCursor: z.string().max(512).refine((value) => /^[A-Za-z0-9_-]+$/.test(value), 'Invalid cursor').optional(),
+}).strict();
+
+function decodeRecipientCursor(value: string | undefined): { amountMinor: string; userId: string } | null {
+  if (!value) return null;
+  try {
+    if (!/^[A-Za-z0-9_-]+$/.test(value)) throw new Error();
+    const parsed: unknown = JSON.parse(Buffer.from(value, 'base64url').toString('utf8'));
+    if (!Array.isArray(parsed) || parsed.length !== 2 || typeof parsed[0] !== 'string' || !/^\d+$/.test(parsed[0]) || typeof parsed[1] !== 'string' || !UUID.safeParse(parsed[1]).success) throw new Error();
+    if (Buffer.from(JSON.stringify(parsed)).toString('base64url') !== value) throw new Error();
+    return { amountMinor: parsed[0], userId: parsed[1] };
+  } catch {
+    throw new ProblemException({ type: ERR.VALIDATION_FAILED, detail: 'Invalid recipient cursor' });
+  }
+}
 
 export const AuditQuerySchema = z
   .object({
@@ -242,17 +268,19 @@ export class RainAdminService {
 
   // Gets detail for a single rain run
   async rain(query: unknown) {
-    const { rainId } = parseDto(RainIdSchema, query);
+    const { rainId, recipientLimit, recipientCursor } = parseDto(RainDetailQuerySchema, query);
     const run = await this.db.run(rainId);
     if (!run) throw new ProblemException({ type: ERR.NOT_FOUND, detail: 'Rain not found' });
-    const recipients = await this.db.recipients(rainId);
+    const recipients = await this.db.recipients(rainId, recipientLimit, decodeRecipientCursor(recipientCursor));
+    const recipientPage = recipients.slice(0, recipientLimit);
+    const lastRecipient = recipientPage.at(-1);
     return {
       rain: {
         ...view(run),
         security: run.security,
         rewards: run.rewards,
         reverseDetail: run.reverseDetail,
-        recipients: recipients.map((r) => ({
+        recipients: recipientPage.map((r) => ({
           userId: r.userId,
           username: r.username,
           amount: formatMinor(r.amountMinor),
@@ -260,6 +288,9 @@ export class RainAdminService {
           reversedAt: r.reversedAt?.toISOString() ?? null,
           reclaimed: r.reclaimedMinor !== null ? formatMinor(r.reclaimedMinor) : null,
         })),
+        recipientsNext: recipients.length > recipientLimit && lastRecipient
+          ? Buffer.from(JSON.stringify([lastRecipient.amountMinor.toString(), lastRecipient.userId])).toString('base64url')
+          : null,
       },
     };
   }
@@ -291,15 +322,20 @@ export class RainAdminService {
   }
 
   // Triggers one-off system rain
-  async trigger(adminId: string) {
+  async trigger(body: unknown, adminId: string) {
+    const manualSystem = parseDto(ManualSystemRainSchema, body);
     const cfg = await this.currentConfig();
     if (effectiveStatus(cfg, 'system') !== 'ON') {
       throw new ProblemException({ type: ERR.FORBIDDEN, detail: 'Rainpool (system rains) is not ON' });
     }
+    const amount = new Prisma.Decimal(manualSystem.usdAmount);
+    if (!cfg.system.currencies.includes(manualSystem.currency) || amount.lt(cfg.system.amountUsd.min) || amount.gt(cfg.system.amountUsd.max)) {
+      throw new ProblemException({ type: ERR.VALIDATION_FAILED, detail: 'Choose a configured currency and USD amount within the Rainpool limits' });
+    }
     if (await this.db.openJob('MANUAL_SYSTEM')) {
       throw new ProblemException({ type: ERR.FORBIDDEN, detail: 'A Rainpool trigger is already waiting' });
     }
-    return this.queue('MANUAL_SYSTEM', null, adminId, null, 'RAIN_TRIGGER');
+    return this.queue('MANUAL_SYSTEM', null, adminId, null, 'RAIN_TRIGGER', manualSystem);
   }
 
   // Queries background jobs
@@ -405,10 +441,11 @@ export class RainAdminService {
     adminId: string,
     reason: string | null,
     action: string,
+    manualSystem?: { currency: string; usdAmount: string; roomId: string; recipients: number },
   ) {
-    const jobId = await this.db.enqueue({ kind, rainId, adminId, reason });
+    const jobId = await this.db.enqueue({ kind, rainId, adminId, reason, manualSystem: manualSystem ?? null });
     if (!jobId) throw alreadyQueued();
-    await this.record(adminId, action, { rainId, reason, detail: { jobId } });
+    await this.record(adminId, action, { rainId, reason, detail: { jobId, manualSystem: manualSystem ?? null } });
     return { queued: true, jobId };
   }
 

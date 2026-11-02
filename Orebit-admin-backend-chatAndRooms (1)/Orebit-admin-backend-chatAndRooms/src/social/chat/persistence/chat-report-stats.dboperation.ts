@@ -5,7 +5,7 @@ import { PrismaService } from '../../../../db/client';
 export interface ReportStats {
   // Aggregated report metrics breakdown by outcome within date range.
   readonly totals: { readonly correct: number; readonly falseReports: number; readonly reviewed: number; readonly pending: number };
-  readonly byReason: { reason: string; total: number; correct: number; falseReports: number }[];
+  readonly byReason: { reportType: 'MESSAGE' | 'USER'; reason: string; total: number; correct: number; falseReports: number }[];
   readonly topReporters: { userId: string; username: string | null; total: number; correct: number; falseReports: number }[];
   readonly mostReported: { userId: string; username: string | null; total: number }[];
 }
@@ -28,12 +28,12 @@ export class ChatReportStatsDbOperation {
              count(*) FILTER (WHERE r.status = 'PENDING')::int AS pending
       FROM chat.chat_message_reports r WHERE ${range}
     `;
-    const byReason = await this.prisma.$queryRaw<{ reason: string; total: number; correct: number; false_reports: number }[]>`
-      SELECT r.reason, count(*)::int AS total,
+    const byReason = await this.prisma.$queryRaw<{ report_type: 'MESSAGE' | 'USER'; reason: string; total: number; correct: number; false_reports: number }[]>`
+      SELECT r.report_type, r.reason, count(*)::int AS total,
              count(*) FILTER (WHERE r.status = 'ACTIONED')::int AS correct,
              count(*) FILTER (WHERE r.status = 'DISMISSED')::int AS false_reports
       FROM chat.chat_message_reports r WHERE ${range}
-      GROUP BY r.reason ORDER BY total DESC, r.reason LIMIT ${opts.top}
+      GROUP BY r.report_type, r.reason ORDER BY total DESC, r.report_type, r.reason LIMIT ${opts.top}
     `;
     const reporters = await this.prisma.$queryRaw<
       { user_id: string; username: string | null; total: number; correct: number; false_reports: number }[]
@@ -53,7 +53,7 @@ export class ChatReportStatsDbOperation {
     `;
     return {
       totals: { correct: totals!.correct, falseReports: totals!.false_reports, reviewed: totals!.reviewed, pending: totals!.pending },
-      byReason: byReason.map((row) => ({ reason: row.reason, total: row.total, correct: row.correct, falseReports: row.false_reports })),
+      byReason: byReason.map((row) => ({ reportType: row.report_type, reason: row.reason, total: row.total, correct: row.correct, falseReports: row.false_reports })),
       topReporters: reporters.map((row) => ({ userId: row.user_id, username: row.username, total: row.total, correct: row.correct, falseReports: row.false_reports })),
       mostReported: reported.map((row) => ({ userId: row.user_id, username: row.username, total: row.total })),
     };

@@ -103,7 +103,6 @@ export interface AdminRoom {
   access?: RoomAccess;
   createdAt: string;
   onlineCount: number;
-  messageCount: number;
 }
 
 export type ReportReason =
@@ -124,7 +123,8 @@ export interface ChatReport {
   roomName?: string | null;
   reporterId: string;
   reporterUsername?: string | null;
-  reportedUserId: string;
+  reportedUserId: string | null;
+  dmMessageArchived?: boolean;
   reportedUsername?: string | null;
   reason: ReportReason | string;
   details?: string | null;

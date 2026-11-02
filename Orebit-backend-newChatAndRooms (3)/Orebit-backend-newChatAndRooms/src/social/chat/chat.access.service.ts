@@ -34,6 +34,7 @@ export class ChatAccessService {
   } | null = null;
   private loadingRooms: Promise<unknown> | null = null;
   private readonly facts = new Map<string, CachedFacts>();
+  private readonly factsInFlight = new Map<string, Promise<EligibilityFacts>>();
   private readonly casino = new Map<string, { value: EligibilityFacts['casino']; at: number }>();
   private readonly reportedProblems = new Map<string, string>();
 
@@ -45,7 +46,11 @@ export class ChatAccessService {
     private readonly restrictions: ChatRestrictionsService,
   ) {
     this.bus.subscribe((change) => {
-      if (change.kind === 'restrictions') this.facts.clear();
+      if (change.kind === 'restrictions') {
+        for (const [userId, cached] of this.facts) {
+          if (cached.facts.staffRole !== null) this.facts.delete(userId);
+        }
+      }
       if (change.kind === 'room' || change.kind === 'settings') this.rooms = null;
       if (change.kind === 'settings') {
         this.facts.clear();
@@ -139,6 +144,21 @@ export class ChatAccessService {
     ) {
       return cached.facts;
     }
+    const inFlight = this.factsInFlight.get(user.id);
+    if (inFlight) {
+      const result = await inFlight;
+      return result.staffRole === user.staffRole ? result : this.factsFor(user);
+    }
+    const pending = this.loadFacts(user);
+    this.factsInFlight.set(user.id, pending);
+    try {
+      return await pending;
+    } finally {
+      if (this.factsInFlight.get(user.id) === pending) this.factsInFlight.delete(user.id);
+    }
+  }
+
+  private async loadFacts(user: ChatUserContext): Promise<EligibilityFacts> {
     const [portFacts, excluded, included] = await Promise.all([
       this.ports.facts(user.id),
       this.db.excludedRoomIds(user.id),

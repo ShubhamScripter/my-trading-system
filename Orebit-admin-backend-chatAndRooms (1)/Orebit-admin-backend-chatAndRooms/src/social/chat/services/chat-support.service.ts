@@ -22,7 +22,13 @@ export const TicketsQuerySchema = z
   })
   .strict();
 
-export const TicketQuerySchema = z.object({ ticketId: UUID }).strict();
+export const TicketQuerySchema = z
+  .object({
+    ticketId: UUID,
+    limit: z.coerce.number().int().min(1).max(100).default(50),
+    cursor: z.string().regex(CURSOR, 'Not a cursor this API returned').optional(),
+  })
+  .strict();
 
 export const TicketReplySchema = z
   .object({ ticketId: UUID, content: z.string().trim().min(1).max(4000) })
@@ -54,10 +60,16 @@ export class ChatSupportService {
     };
   }
 
-  async ticket(query: unknown): Promise<{ ticket: TicketSummary; messages: TicketMessage[] }> {
-    const { ticketId } = parseDto(TicketQuerySchema, query);
+  async ticket(query: unknown): Promise<{ ticket: TicketSummary; messages: TicketMessage[]; nextCursor: string | null }> {
+    const { ticketId, limit, cursor } = parseDto(TicketQuerySchema, query);
+    const [at, id] = cursor ? cursor.split('|') : [];
     const ticket = await this.require(ticketId);
-    return { ticket, messages: await this.db.messages(ticketId) };
+    const page = await this.db.messages(ticketId, limit, at && id ? { at, id } : null);
+    return {
+      ticket,
+      messages: page.rows.slice(0, limit),
+      nextCursor: page.rows.length > limit ? (page.cursors[limit - 1] ?? null) : null,
+    };
   }
 
   async reply(body: unknown, adminId: string): Promise<{ ticket: TicketSummary }> {

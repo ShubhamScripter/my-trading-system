@@ -1,5 +1,5 @@
 import 'reflect-metadata';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { TestingModule } from '@nestjs/testing';
 import type { PrismaClient } from '@prisma/client';
 import { ERR } from '../../src/contracts';
@@ -260,10 +260,12 @@ describe.skipIf(!url)('chat Modules 8–9 hardening (real services, scratch data
     const gid = await publicGroup('ivy', 'jon', 'kim', 'lee', 'mia', 'bob', 'cat');
     emitted.length = 0;
     await dm.send(u.ivy, gid, msg('to everyone'), IP);
-    const events = sent('dm_message');
-    // The sender's own view and the view every other member shares: two emits for seven members.
-    expect(events.length).toBeLessThanOrEqual(2);
-    expect(new Set(events.flatMap((e) => e.to)).size).toBe(7);
+    await vi.waitFor(() => {
+      const events = sent('dm_message');
+      // The sender's own view and the view every other member shares: two emits for seven members.
+      expect(events.length).toBeLessThanOrEqual(2);
+      expect(new Set(events.flatMap((e) => e.to)).size).toBe(7);
+    }, { timeout: 5_000, interval: 25 });
   });
 
   // ─── Forward (FR-204) ─────────────────────────────────────────────────────────────────────────────────────────────
@@ -356,7 +358,7 @@ describe.skipIf(!url)('chat Modules 8–9 hardening (real services, scratch data
   it('ownership moves at once, asks no code, stays one owner, and obeys x times in y hours', async () => {
     settings({ groups: { transfersPerWindow: 1, transferWindowHours: 24 } });
     const gid = await publicGroup('ivy', 'jon', 'kim');
-    expect(await admin.startTransfer(u.ivy, gid, u.jon.id)).toEqual({ groupId: gid, ownerId: u.jon.id });
+    expect(await admin.startTransfer(u.ivy, gid, u.jon.username)).toEqual({ groupId: gid, ownerId: u.jon.id });
     expect((await groupsDb.group(gid))?.ownerId).toBe(u.jon.id);
     expect(await dmDb.member(gid, u.ivy.id)).toMatchObject({ role: 'ADMIN' });
     expect(await refusal(() => admin.startTransfer(u.jon, gid, u.kim.id))).toBe('limit_reached');
@@ -373,14 +375,15 @@ describe.skipIf(!url)('chat Modules 8–9 hardening (real services, scratch data
   // ─── Bans, unbans, leaving, closing, timeouts (FR-128, FR-203, FR-129, V2-119, V2-122) ────────────────────────────
   it('a member who left can be banned; a ban is lifted only by a role not below the banner; the ban list is paged', async () => {
     const gid = await publicGroup('ivy', 'jon', 'kim', 'lee');
-    await admin.setRole(u.ivy, gid, u.jon.id, 'ADMIN');
+    await admin.setRole(u.ivy, gid, u.jon.username, 'ADMIN');
+    expect(await refusal(() => admin.remove(u.ivy, gid, 'missing-user'))).toBe('not_a_member');
     await groups.leave(u.lee, gid);
-    expect(await admin.ban(u.ivy, gid, u.lee.id, 'spam', true)).toMatchObject({ banned: true });
+    expect(await admin.ban(u.ivy, gid, u.lee.username, 'spam', true)).toMatchObject({ banned: true });
     expect(await refusal(() => groups.join(u.lee, gid))).toBe('group_banned');
     // The admin may not lift a ban the owner set.
     expect(await refusal(() => admin.ban(u.jon, gid, u.lee.id, null, false))).toBe('target_outranks_you');
     // A ban on someone who is not banned says so.
-    expect(await refusal(() => admin.ban(u.ivy, gid, u.kim.id, null, false))).toBe('not_a_member');
+    expect(await refusal(() => admin.ban(u.ivy, gid, u.kim.id, null, false))).toBe('group_ban_not_found');
     await admin.ban(u.jon, gid, u.kim.id, 'flood', true);
     const page = await admin.bans(u.ivy, gid, { limit: 1 });
     expect(page.items).toHaveLength(1);

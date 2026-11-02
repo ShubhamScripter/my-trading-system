@@ -43,7 +43,6 @@ export interface StoredPrefs {
   quietMode: string | null;
   quietStart: string | null;
   quietEnd: string | null;
-  timeZone: string | null;
   lastSeenAt: Date | null;
   // The one switch for "typing..." and read receipts, both directions.
   typingReceiptsEnabled: boolean;
@@ -58,7 +57,6 @@ const NO_PREFS: StoredPrefs = {
   quietMode: null,
   quietStart: null,
   quietEnd: null,
-  timeZone: null,
   lastSeenAt: null,
   typingReceiptsEnabled: true,
 };
@@ -68,12 +66,14 @@ const NO_PREFS: StoredPrefs = {
 // . Aliases: `me` = chat.dm_members, `c` = chat.dm_conversations.
 const UNREAD_EXISTS = Prisma.sql`EXISTS (
   SELECT 1 FROM chat.dm_messages x
-  WHERE x.conversation_id = c.id AND x.sender_id <> me.user_id AND x.type <> 'SYSTEM' AND x.hidden_at IS NULL
+  WHERE (me.last_read_at IS NULL OR c.last_message_at > me.last_read_at)
+    AND x.conversation_id = c.id AND x.sender_id <> me.user_id AND x.type <> 'SYSTEM' AND x.hidden_at IS NULL
     AND x.created_at >= me.joined_at AND (me.last_read_at IS NULL OR x.created_at > me.last_read_at))`;
 
 @Injectable()
 export class DmInboxDbOperation {
   private readonly switches = new Map<string, { on: boolean; at: number }>();
+  private readonly prefsCache = new Map<string, { value: StoredPrefs; at: number }>();
 
   constructor(private readonly prisma: PrismaService) {}
 
@@ -145,7 +145,8 @@ export class DmInboxDbOperation {
              ${TIME_TEXT('COALESCE(c.last_message_at, c.created_at)')} AS sort_at_text,
              (SELECT count(*)::int FROM (
                 SELECT 1 FROM chat.dm_messages x
-                WHERE x.conversation_id = c.id AND x.sender_id <> me.user_id AND x.type <> 'SYSTEM'
+                WHERE (me.last_read_at IS NULL OR c.last_message_at > me.last_read_at)
+                  AND x.conversation_id = c.id AND x.sender_id <> me.user_id AND x.type <> 'SYSTEM'
                   AND x.hidden_at IS NULL AND x.created_at >= me.joined_at
                   AND (me.last_read_at IS NULL OR x.created_at > me.last_read_at)
                 LIMIT 100) q) AS unread,
@@ -244,10 +245,17 @@ export class DmInboxDbOperation {
 
   // Preferences
   async prefs(userIds: readonly string[]): Promise<Map<string, StoredPrefs>> {
-    const out = new Map<string, StoredPrefs>(userIds.map((id) => [id, NO_PREFS]));
-    if (userIds.length === 0) return out;
+    const now = Date.now();
+    const out = new Map<string, StoredPrefs>();
+    const missing: string[] = [];
+    for (const id of userIds) {
+      const hit = this.prefsCache.get(id);
+      if (hit && now - hit.at < 60_000) out.set(id, hit.value);
+      else missing.push(id);
+    }
+    if (missing.length === 0) return out;
     const rows = await this.prisma.userChatPreference.findMany({
-      where: { userId: { in: [...userIds] } },
+      where: { userId: { in: missing } },
       select: {
         userId: true,
         lastSeenVisibility: true,
@@ -258,12 +266,17 @@ export class DmInboxDbOperation {
         quietMode: true,
         quietStart: true,
         quietEnd: true,
-        timeZone: true,
         lastSeenAt: true,
         typingReceiptsEnabled: true,
       },
     });
-    for (const { userId, ...rest } of rows) out.set(userId, rest);
+    const found = new Map(rows.map(({ userId, ...rest }) => [userId, rest]));
+    for (const id of missing) {
+      const value = found.get(id) ?? NO_PREFS;
+      out.set(id, value);
+      this.prefsCache.set(id, { value, at: now });
+    }
+    if (this.prefsCache.size > 50_000) this.prefsCache.clear();
     return out;
   }
 
@@ -293,6 +306,7 @@ export class DmInboxDbOperation {
   }
 
   async savePrefs(userId: string, data: Partial<Omit<StoredPrefs, 'lastSeenAt'>>): Promise<void> {
+    this.prefsCache.delete(userId);
     this.switches.delete(userId);
     await this.prisma.userChatPreference.upsert({
       where: { userId },

@@ -7,12 +7,13 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ChatBus } from '../realtime/chat.bus';
 import { TIMERS } from '../chat.constants';
-import type { RestrictionKind, RestrictionTarget } from '../chat.contract';
+import type { RestrictionKind, RestrictionTarget, StaffRole } from '../chat.contract';
 import {
   ChatStaffDbOperation,
   type RestrictionRecord,
 } from '../persistence/chat.staff.dboperation';
 import type { ChatUserContext, EligibilityFacts, RoomRecord } from '../chat.types';
+import { rankOf } from './chat.permissions';
 
 // Said to a refused user when the restriction carries no reason of its own for them (the internal one never leaves).
 export const RESTRICTED_FOR_YOU = 'This action is restricted for you';
@@ -92,13 +93,17 @@ export class ChatRestrictionsService {
   private readonly logger = new Logger('ChatRestrictionsService');
   private cache: { rows: RestrictionRecord[]; byUser: Map<string, RestrictionRecord[]>; groups: RestrictionRecord[]; at: number } | null = null;
   private loading: Promise<RestrictionRecord[]> | null = null;
+  private generation = 0;
 
   constructor(
     private readonly db: ChatStaffDbOperation,
     private readonly bus: ChatBus,
   ) {
     this.bus.subscribe((change) => {
-      if (change.kind === 'restrictions') this.cache = null;
+      if (change.kind === 'restrictions') {
+        this.generation += 1;
+        if (this.cache) this.cache = { ...this.cache, at: 0 };
+      }
     });
   }
 
@@ -114,10 +119,11 @@ export class ChatRestrictionsService {
     if (this.cache && Date.now() - this.cache.at < TIMERS.CACHE_SECONDS * 1000)
       return this.cache.rows;
     if (!this.loading) {
+      const generation = this.generation;
       this.loading = this.db
         .activeRestrictions()
         .then((rows) => {
-          this.cache = { rows, ...indexOf(rows), at: Date.now() };
+          if (generation === this.generation) this.cache = { rows, ...indexOf(rows), at: Date.now() };
           return rows;
         })
         .catch((err: unknown) => {
@@ -144,8 +150,9 @@ export class ChatRestrictionsService {
     room: RoomRecord | null,
     dbNow: Date,
     command?: string,
+    groupOnly = false,
   ): Promise<ActiveRestriction | null> {
-    if (room) {
+    if (room && !groupOnly) {
       for (const r of room.config.userRestrictions) {
         if (r.restriction !== kind) continue;
         if (kind === 'RESTRICT_COMMANDS' && !coversCommand(r.commands, command)) continue;
@@ -161,7 +168,14 @@ export class ChatRestrictionsService {
       }
     }
     for (const r of await this.candidates(user.id)) {
+      if (groupOnly && r.targetType === 'USER') continue;
       if (r.kind !== kind) continue;
+      if (
+        r.targetType !== 'USER' &&
+        r.createdByRole !== null &&
+        user.staffRole !== null &&
+        rankOf(user.staffRole) >= rankOf(r.createdByRole as StaffRole)
+      ) continue;
       if (r.roomId !== null && r.roomId !== room?.id) continue;
       if (kind === 'RESTRICT_COMMANDS' && !coversCommand(r.commands, command)) continue;
       if (restrictionTargets(r, user, facts, dbNow)) {

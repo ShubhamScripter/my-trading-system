@@ -2,6 +2,7 @@ import { Injectable, OnModuleDestroy } from '@nestjs/common';
 import type { Server } from 'socket.io';
 import { SERVER_EVENTS, TIMERS, personalRoom, socketRoom } from '../chat.constants';
 import { ChatPresenceService } from '../chat.presence.service';
+import type { ChatSocket } from '../chat.types';
 import { broadcastView } from '../chat.utility';
 import type { MessageRow, PublicMessage } from '../chat.types';
 import { ChatRelationsService, HIDEABLE_TYPES } from '../services/chat.relations.service';
@@ -106,26 +107,26 @@ export class ChatDelivery implements OnModuleDestroy {
     traffic.queue = [];
     if (batch.length === 0 || !this.server) return;
 
-    // Group queued messages by distinct hider sets to preserve ordering and batching (FR-010)
-    const groups = new Map<string, { hiders: readonly string[]; views: PublicMessage[] }>();
-    for (const item of batch) {
-      const key = item.hiders.length > 0 ? [...item.hiders].sort().join(',') : '';
-      let group = groups.get(key);
-      if (!group) {
-        group = { hiders: item.hiders, views: [] };
-        groups.set(key, group);
-      }
-      group.views.push(item.view);
-    }
+    // Broadcast the batch once to members who hide none of these authors. A member who hides at least one author
+    // gets one personalized batch with only their visible messages. This avoids one room-wide frame per distinct
+    // mute set while keeping hidden messages out of that member's socket.
+    const roomMembers = new Set(this.presence.userIdsInRoom(roomId));
+    const hiders = new Set(batch.flatMap((item) => item.hiders).filter((id) => roomMembers.has(id)));
+    const views = batch.map((item) => item.view);
+    let room = this.server.to(socketRoom(roomId));
+    if (hiders.size > 0) room = room.except([...hiders].map(personalRoom));
+    room.emit(SERVER_EVENTS.NEW_MESSAGES, views);
 
-    for (const group of groups.values()) {
-      if (group.hiders.length > 0) {
-        this.server
-          .to(socketRoom(roomId))
-          .except(group.hiders.map(personalRoom))
-          .emit(SERVER_EVENTS.NEW_MESSAGES, group.views);
-      } else {
-        this.server.to(socketRoom(roomId)).emit(SERVER_EVENTS.NEW_MESSAGES, group.views);
+    for (const hider of hiders) {
+      const visible = batch
+        .filter((item) => !item.hiders.includes(hider))
+        .map((item) => item.view);
+      if (visible.length > 0) {
+        for (const socket of this.presence.socketsOf(hider)) {
+          if ((socket as ChatSocket).data.roomId === roomId) {
+            socket.emit(SERVER_EVENTS.NEW_MESSAGES, visible);
+          }
+        }
       }
     }
   }

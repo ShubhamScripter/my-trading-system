@@ -121,7 +121,7 @@ export class ChatMoneyRevertService {
       const person: ChatUserContext = { id: userId, username: '', publicCode: '', staffRole: null };
       const facts: EligibilityFacts = await this.access.factsFor(person);
       const yes = restrictionTargets(
-        { targetType: filter.group.targetType, targetValue: filter.group.value || '0', expiresAt: null },
+        { targetType: filter.group.targetType, targetValue: filter.group.value, expiresAt: null },
         person,
         facts,
         now,

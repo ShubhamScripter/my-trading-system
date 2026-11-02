@@ -66,6 +66,13 @@ export class ChatGiftsService {
         'Sending money from chat is off',
       );
     }
+    if (settings.gifts.processingStaleMinutes === null) {
+      throw refuse(
+        ERR.FORBIDDEN,
+        CHAT_REFUSAL_REASONS.FEATURE_UNAVAILABLE,
+        'Gift processing limits have not been configured by an administrator',
+      );
+    }
     assertAvailable(settings, 'giftsInChat', true);
     const amount = input.amount.trim();
     const currency = input.currency.trim().toUpperCase();
@@ -98,16 +105,10 @@ export class ChatGiftsService {
       }
       room = seen.room;
     }
-    await this.moderation.assertNotBanned(user.id, room?.id ?? null, dbNow);
+    await this.moderation.assertNotBanned(user, room?.id ?? null, dbNow);
     const facts = await this.access.factsFor(user);
-    if (facts.kycEntitlements && !facts.kycEntitlements.publicChat) {
-      throw refuse(
-        ERR.FORBIDDEN,
-        CHAT_REFUSAL_REASONS.RESTRICTED,
-        'Your KYC level does not include sending gifts',
-        { requirement: { kind: 'KYC', minLevel: (facts.kycLevel ?? 0) + 1 } },
-      );
-    }
+    // Transfer KYC eligibility is owned by the transfer provider below; chat's publicChat entitlement is only for
+    // chat access and must not invent a transfer KYC level for gifts.
     const restricted = await this.restrictions.find(user, facts, 'RESTRICT_GIFTS', room, dbNow);
     if (restricted) {
       throw refuse(ERR.FORBIDDEN, CHAT_REFUSAL_REASONS.RESTRICTED, restricted.reason, {
@@ -311,6 +312,17 @@ export class ChatGiftsService {
         409,
       );
     }
+    const dbNow = await this.db.dbNow();
+    const room = gift.roomId ? await this.access.findRoom(gift.roomId) : null;
+    await this.moderation.assertNotBanned(user, gift.roomId, dbNow);
+    const facts = await this.access.factsFor(user);
+    const restriction = await this.restrictions.find(user, facts, 'RESTRICT_GIFTS', room, dbNow);
+    if (restriction) {
+      throw refuse(ERR.FORBIDDEN, CHAT_REFUSAL_REASONS.RESTRICTED, restriction.reason, {
+        restriction: 'RESTRICT_GIFTS',
+        expiresAt: restriction.expiresAt,
+      });
+    }
     const hasPin = await this.ports.hasPaymentPin(user.id);
     if (hasPin) {
       const verified = await this.ports.verify(user.id, 'PAYMENT_PIN', code.trim());
@@ -380,7 +392,19 @@ export class ChatGiftsService {
         message: 'The transfer is on hold for review',
       };
     }
-    await this.completeTransfer(gift, outcome.reference, user.username);
+    const completed = await this.completeTransfer(gift, outcome.reference, user.username);
+    if (!completed) {
+      const current = await this.gifts.byId(gift.id);
+      if (current?.status !== 'COMPLETED') {
+        throw refuse(
+          ERR.FORBIDDEN,
+          CHAT_REFUSAL_REASONS.PAYMENT_PENDING,
+          'The transfer completed but its status is still being reconciled',
+          { giftId: gift.id },
+          409,
+        );
+      }
+    }
     return {
       giftId: gift.id,
       status: 'COMPLETED' as const,

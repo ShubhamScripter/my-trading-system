@@ -12,4 +12,3 @@ ALTER TABLE "chat"."chat_ads"
 
 ALTER TABLE "chat"."gift_transfers"
     ADD COLUMN "revert_shortfall" TEXT;
-

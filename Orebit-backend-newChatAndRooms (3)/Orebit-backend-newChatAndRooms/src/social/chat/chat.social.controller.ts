@@ -115,17 +115,13 @@ export class ChatSocialController {
     return ok(await this.ads.cancel(await this.user(req), adId, dto.refundCurrency));
   }
 
-  async adOptions(_req: FastifyRequest): Promise<SuccessEnvelope<unknown>> {
+  async adOptions(req: FastifyRequest): Promise<SuccessEnvelope<unknown>> {
+    await this.user(req);
     return ok(await this.adsRead.options());
   }
 
   async giftOptions(req: FastifyRequest): Promise<SuccessEnvelope<unknown>> {
-    let user: ChatUserContext | undefined;
-    try {
-      user = await this.user(req);
-    } catch {
-      // unauthenticated
-    }
+    const user = await this.user(req);
     return ok(await this.gifts.options(user));
   }
 

@@ -255,7 +255,9 @@ export class GroupTargetDto {
 export class WarnUserDto {
   // One user, or `group`: exactly one of the two (checked by the service).
   @ValidateIf((dto: WarnUserDto) => dto.group === undefined)
-  @IsUuidLike()
+  @Transform(trim)
+  @IsString()
+  @Length(1, 64)
   userId?: string;
 
   @IsOptional()
@@ -285,7 +287,9 @@ export class WarnUserDto {
 export class BanUserDto {
   // One user, or `group`: exactly one of the two (checked by the service).
   @ValidateIf((dto: BanUserDto) => dto.group === undefined)
-  @IsUuidLike()
+  @Transform(trim)
+  @IsString()
+  @Length(1, 64)
   userId?: string;
 
   @IsOptional()

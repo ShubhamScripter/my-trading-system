@@ -29,7 +29,12 @@ export class ChatMoneyLoop implements OnApplicationBootstrap, OnModuleDestroy {
     if (process.env.NODE_ENV === 'test') return;
     // An admin created, cancelled or reverted an ad, or an advertiser cancelled one: do its money now, not next tick.
     this.unsubscribe = this.bus.subscribe((change) => {
-      if (change.kind === 'ad') void this.kick();
+      if (change.kind === 'ad') {
+        void this.ads.announceCancelledPins(change.adId).catch((err: unknown) =>
+          this.logger.warn({ component: 'ChatMoneyLoop', err, adId: change.adId }, 'cancelled pin notification failed'),
+        );
+        void this.kick();
+      }
     });
     this.timer = setInterval(() => void this.kick(), TIMERS.MONEY_LOOP_MS);
     this.timer.unref();
@@ -50,7 +55,11 @@ export class ChatMoneyLoop implements OnApplicationBootstrap, OnModuleDestroy {
     try {
       do {
         this.again = false;
-        await this.pass();
+        try {
+          await this.pass();
+        } catch (err: unknown) {
+          this.logger.error({ component: 'ChatMoneyLoop', err }, 'money loop pass failed');
+        }
       } while (this.again);
     } finally {
       this.running = false;
@@ -71,6 +80,13 @@ export class ChatMoneyLoop implements OnApplicationBootstrap, OnModuleDestroy {
       }
       return;
     }
+    if (config.giftProcessingMinutes === null && Date.now() - this.lastMissingLog >= 10 * 60_000) {
+      this.lastMissingLog = Date.now();
+      this.logger.warn(
+        { component: 'ChatMoneyLoop', missing: missingMoneyNumbers(settings) },
+        'gift reconciliation is not running: the admin has not set gifts.processingStaleMinutes',
+      );
+    }
     const steps: [string, (until: number) => Promise<void>][] = [
       ['money_reverts', (until) => this.moneyReverts.process(config, until)],
       ['ads', (until) => this.ads.moneyPass(config, until)],
@@ -83,6 +99,7 @@ export class ChatMoneyLoop implements OnApplicationBootstrap, OnModuleDestroy {
       } catch (err: unknown) {
         this.logger.error({ component: 'ChatMoneyLoop', err, step: name }, 'money loop step failed');
       }
+      if (name === 'ads') await this.ads.syncPins();
     }
   }
 }

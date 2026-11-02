@@ -869,7 +869,10 @@
             "merchantMessageCap": 3,
             "maxPinnedPeople": 5,
             "maxPinnedMessages": 10,
-            "typingEverySeconds": 2
+            "typingEverySeconds": 2,
+            "membershipNoticeWindowSeconds": 60,
+            "searchMinLength": 2,
+            "searchMaxLength": 100
           }
         }
       },
@@ -890,7 +893,10 @@
             "merchantMessageCap": 3,
             "maxPinnedPeople": 5,
             "maxPinnedMessages": 10,
-            "typingEverySeconds": 2
+            "typingEverySeconds": 2,
+            "membershipNoticeWindowSeconds": 60,
+            "searchMinLength": 2,
+            "searchMaxLength": 100
           },
           "privacy": {
             "lastSeenDefault": "FRIENDS",

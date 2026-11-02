@@ -28,6 +28,7 @@ import { ChatStaffToolsService } from '../../src/social/chat/services/chat.staff
 import { ChatStaffPenaltiesService } from '../../src/social/chat/services/chat.staff.penalties.service';
 import { ChatStaffInsightService } from '../../src/social/chat/services/chat.staff.insight.service';
 import { ChatDbOperation } from '../../src/social/chat/chat.dboperation';
+import { ChatAccessService } from '../../src/social/chat/chat.access.service';
 import { toPublicMessage } from '../../src/social/chat/chat.utility';
 import type { ChatSettingsDocument } from '../../src/social/chat/chat.settings.contract';
 import { DmService } from '../../src/social/chat/dm/dm.service';
@@ -77,7 +78,7 @@ describe.skipIf(!url)('chat Modules 4–9 end to end (real services, scratch dat
       VALUES (${id}::uuid, ${name}, ${name.toUpperCase()}, ${name}, ${name}, ${`${name}@e2e.test`}, ${`${name}@e2e.test`}, ${name})
     `;
     if (role) {
-      await prisma.$executeRaw`INSERT INTO chat.staff_roles (user_id, role) VALUES (${id}::uuid, ${role}::chat."StaffRole")`;
+      await prisma.$executeRaw`INSERT INTO chat.staff_roles (id, user_id, role) VALUES (${uuidv7()}::uuid, ${id}::uuid, ${role}::chat."StaffRole")`;
     }
     users[key] = { id, username: name, publicCode: name, staffRole: role };
   };
@@ -261,6 +262,25 @@ describe.skipIf(!url)('chat Modules 4–9 end to end (real services, scratch dat
     );
   });
 
+  it('leaves Transfer KYC eligibility to the transfer provider, not public-chat entitlement', async () => {
+    const access = module.get(ChatAccessService);
+    const originalFactsFor = access.factsFor.bind(access);
+    access.factsFor = async (user) => ({
+      ...(await originalFactsFor(user)),
+      kycEntitlements: { publicChat: false, roomIds: null },
+    });
+    try {
+      const gift = await module.get(ChatGiftsService).start(users.ada, {
+        recipient: users.bob.id,
+        amount: '1',
+        currency: 'USDT',
+      });
+      expect(gift.status).toBe('PENDING_VERIFICATION');
+    } finally {
+      access.factsFor = originalFactsFor;
+    }
+  });
+
   it('a gift to someone you muted is refused', async () => {
     await commands.run(users.ada, {
       roomRef: roomId,
@@ -283,7 +303,7 @@ describe.skipIf(!url)('chat Modules 4–9 end to end (real services, scratch dat
     });
   });
 
-  it('/ad posts an AD message, pins it, and a cancel refunds the unused part', async () => {
+  it('/ad posts and pins; the advertiser cannot cancel after posting and the pin keeps running', async () => {
     emitted.length = 0;
     const result = await commands.run(users.bob, {
       roomRef: roomId,
@@ -299,9 +319,8 @@ describe.skipIf(!url)('chat Modules 4–9 end to end (real services, scratch dat
     expect((await ads.activePin(roomId, null))?.adId).toBe(ad.adId);
     // The shared scratch database may hold other rooms' queued slots that start in the same pass.
     expect(sent('ad_pinned').find((e) => e.to.includes(`room:${roomId}`))).toBeDefined();
-    const cancelled = await ads.cancel(users.bob, ad.adId);
-    expect(Number(cancelled.refundUsd)).toBeGreaterThan(0);
-    expect(await ads.activePin(roomId, null)).toBeNull();
+    await expect(ads.cancel(users.bob, ad.adId)).rejects.toMatchObject({ status: 409 });
+    expect((await ads.activePin(roomId, null))?.adId).toBe(ad.adId);
   });
 
   // ─── Module 4: REPORT mode ──────────────────────────────────────────────────────────────────────────────────────
@@ -444,6 +463,29 @@ describe.skipIf(!url)('chat Modules 4–9 end to end (real services, scratch dat
       dmMessageId: first.message.id,
       messageContent: 'pin me please',
     });
+
+    await prisma.$executeRaw`CREATE TABLE IF NOT EXISTS chat_archive.dm_messages_2000_01
+      (LIKE chat.dm_messages INCLUDING ALL)`;
+    const archivedId = uuidv7();
+    const archivedContent = 'archived DM evidence';
+    await prisma.$executeRaw`
+      INSERT INTO chat_archive.dm_messages_2000_01
+        (id, conversation_id, sender_id, content, type, metadata, created_at)
+      VALUES (${archivedId}::uuid, ${opened.conversationId}::uuid, ${users.cat.id}::uuid,
+              ${archivedContent}, 'TEXT', '{}'::jsonb, '2000-01-15T12:00:00Z'::timestamptz)
+    `;
+    const archivedReport = await actions.report(users.ada, archivedId, { reason: 'SPAM' });
+    const archivedQueue = await module.get(ChatStaffQueueService).reports(users.mod, {});
+    expect(archivedQueue.items.find((r) => r.id === archivedReport.reportId)).toMatchObject({
+      dmMessageId: archivedId,
+      dmMessageArchived: true,
+      messageContent: archivedContent,
+    });
+    await expect(
+      module.get(ChatStaffQueueService).actOnReport(users.boss, archivedReport.reportId, {
+        action: 'RETRACT_MESSAGE',
+      }),
+    ).rejects.toMatchObject({ type: 'validation_failed' });
   });
 
   it('public groups: anyone joins, a banned member cannot come back', async () => {
@@ -486,7 +528,7 @@ describe.skipIf(!url)('chat Modules 4–9 end to end (real services, scratch dat
     ).toBe('permission_denied');
 
     // V2-144: ownership moves at once and asks no code.
-    expect(await groupAdmin.startTransfer(users.ada, created.groupId, users.bob.id)).toEqual({
+    expect(await groupAdmin.startTransfer(users.ada, created.groupId, users.bob.username)).toEqual({
       groupId: created.groupId,
       ownerId: users.bob.id,
     });

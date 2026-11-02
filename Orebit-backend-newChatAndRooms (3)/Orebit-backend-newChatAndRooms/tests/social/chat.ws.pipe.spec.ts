@@ -8,7 +8,10 @@ import {
   SendMediaMessageDto,
   SendMessageDto,
   UpdateChatPreferenceDto,
+  WarnUserDto,
 } from '../../src/social/chat/chat.dto';
+import { GroupTransferDto } from '../../src/social/chat/dm/dm.dto';
+import { PenaltiesQueryDto, StaffRoomAccessDto } from '../../src/social/chat/chat.social.dto';
 import { WsValidationPipe } from '../../src/social/chat/chat.ws.pipe';
 
 const pipe = new WsValidationPipe();
@@ -98,6 +101,14 @@ describe('WsValidationPipe', () => {
       refused(() => pipe.transform({ ...ban, durationHours: -5 }, as(BanUserDto))).paths,
     ).toEqual(['durationHours']);
     expect(() => pipe.transform({ ...ban, permanent: true }, as(BanUserDto))).not.toThrow();
+  });
+
+  it('accepts usernames and public codes for staff targets and group ownership transfer', () => {
+    expect(() => pipe.transform({ userId: 'alice_7', internalReason: 'reviewed' }, as(WarnUserDto))).not.toThrow();
+    expect(() => pipe.transform({ userId: 'ABCD1234', permanent: true, internalReason: 'reviewed' }, as(BanUserDto))).not.toThrow();
+    expect(() => pipe.transform({ userId: 'alice_7', action: 'ADD', note: 'set room access' }, as(StaffRoomAccessDto))).not.toThrow();
+    expect(pipe.transform({ userId: 'alice_7' }, as(PenaltiesQueryDto, 'query'))).toMatchObject({ userId: 'alice_7' });
+    expect(() => pipe.transform({ userId: 'alice_7' }, as(GroupTransferDto))).not.toThrow();
   });
 
   it('refuses removed preference fields', () => {

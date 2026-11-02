@@ -47,7 +47,7 @@ describe.skipIf(!url)('chat action gate and pace limit (real services, scratch d
     ({ prisma, module } = await bootChat(url!, emitted, () => document));
     gate = module.get(ChatActionGate);
     Object.assign(u, await makeUsers(prisma, NAMES, tag));
-    await prisma.$executeRaw`INSERT INTO chat.staff_roles (user_id, role) VALUES (${u.mod.id}::uuid, 'MODERATOR'::chat."StaffRole")`;
+    await prisma.$executeRaw`INSERT INTO chat.staff_roles (id, user_id, role) VALUES (${uuidv7()}::uuid, ${u.mod.id}::uuid, 'MODERATOR'::chat."StaffRole")`;
     u.mod = { ...u.mod, staffRole: 'MODERATOR' };
   }, 60_000);
 

@@ -52,7 +52,7 @@ describe('ChatEventsListener.dispatch', () => {
     expect(changes).toContainEqual({
       kind: 'notice',
       userId: 'u1',
-      notice: { action: 'retract', roomId: 'r1', messageId: 'm1', note: 'Rule 2' },
+      notice: { action: 'retract', roomId: 'r1', messageId: 'm1', note: null },
     });
   });
 
@@ -103,7 +103,7 @@ describe('ChatEventsListener: admin backend names and live signals', () => {
     expect(changes).toContainEqual({
       kind: 'notice',
       userId: 'u2',
-      notice: { action: 'warn', roomId: null, note: 'be kind' },
+      notice: { action: 'warn', roomId: null, note: null },
     });
   });
 

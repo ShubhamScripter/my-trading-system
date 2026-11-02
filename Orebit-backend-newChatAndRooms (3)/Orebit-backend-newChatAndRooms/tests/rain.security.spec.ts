@@ -63,8 +63,12 @@ describe('rain contract version 4', () => {
     const doc = structuredClone(DEFAULT_RAIN_CONFIG);
     doc.system.interval = { min: { value: 2, unit: 'HOURS' }, max: { value: 30, unit: 'MINUTES' } };
     expect(RainConfigSchema.safeParse(doc).success).toBe(false);
-    doc.system.interval = { min: { value: 10, unit: 'SECONDS' }, max: { value: 1, unit: 'MINUTES' } };
-    expect(RainConfigSchema.safeParse(doc).success).toBe(false);
+    const badSeconds: unknown = JSON.parse(JSON.stringify(doc));
+    (badSeconds as { system: { interval: { min: unknown; max: unknown } } }).system.interval.min = {
+      value: 10,
+      unit: 'SECONDS',
+    };
+    expect(RainConfigSchema.safeParse(badSeconds).success).toBe(false);
     doc.system.interval = { min: { value: 30, unit: 'MINUTES' }, max: { value: 2, unit: 'HOURS' } };
     expect(RainConfigSchema.safeParse(doc).success).toBe(true);
   });

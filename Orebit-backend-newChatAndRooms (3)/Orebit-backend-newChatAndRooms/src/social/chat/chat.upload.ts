@@ -17,15 +17,11 @@ export function chatMediaBase(): string {
 /**
  * Chat uploads.
  *
- * `UPLOADS_DIR` and `UPLOADS_URL_PREFIX` stay exported, unchanged, because src/main.ts (not chat code) imports them
- * for its public static route. Chat no longer writes there: new files go to a PRIVATE folder (CHAT_UPLOADS_DIR,
+ * New files go to a PRIVATE folder (CHAT_UPLOADS_DIR,
  * default `storage/chat-media`, outside `uploads/`) and are served only by the signed-in chat media route, so an
  * upload is never a public file host. Nothing is created when this module loads — a read-only container
  * must still start; the folder is created with the first upload.
  */
-export const UPLOADS_DIR = join(process.cwd(), 'uploads', 'chat-media');
-export const UPLOADS_URL_PREFIX = '/uploads/chat-media/';
-
 export function chatUploadsDir(): string {
   const configured = process.env.CHAT_UPLOADS_DIR?.trim();
   return configured && configured.length > 0

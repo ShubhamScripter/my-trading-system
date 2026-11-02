@@ -26,8 +26,10 @@ export class ChatPresenceService {
   private readonly logger = new Logger('ChatPresenceService');
   private readonly byUser = new Map<string, { sockets: Set<ChatSocket>; member: OnlineMember }>();
   private readonly byRoom = new Map<string, Map<string, number>>();
+  private readonly roomsByUser = new Map<string, Set<string>>();
   // Caches each room's first page for 2 s to protect event loop under heavy concurrent opens (CH-021)
   private readonly firstPageCache = new Map<string, { page: Page<OnlineMember> & { count: number }; expiresAt: number }>();
+  private readonly sortedRoomCache = new Map<string, { members: OnlineMember[]; expiresAt: number }>();
 
   constructor(
     private readonly redis: RedisService,
@@ -41,6 +43,7 @@ export class ChatPresenceService {
     if (entry) {
       entry.sockets.add(socket);
       entry.member = member;
+      for (const roomId of this.roomsByUser.get(member.id) ?? []) this.invalidateRoom(roomId);
       return [...entry.sockets];
     }
     this.byUser.set(member.id, { sockets: new Set([socket]), member });
@@ -92,6 +95,10 @@ export class ChatPresenceService {
       this.byRoom.set(roomId, members);
     }
     members.set(userId, (members.get(userId) ?? 0) + 1);
+    const rooms = this.roomsByUser.get(userId) ?? new Set<string>();
+    rooms.add(roomId);
+    this.roomsByUser.set(userId, rooms);
+    this.invalidateRoom(roomId);
   }
 
   leaveRoom(roomId: string, userId: string): void {
@@ -99,8 +106,14 @@ export class ChatPresenceService {
     if (!members) return;
     const count = (members.get(userId) ?? 0) - 1;
     if (count > 0) members.set(userId, count);
-    else members.delete(userId);
+    else {
+      members.delete(userId);
+      const rooms = this.roomsByUser.get(userId);
+      rooms?.delete(roomId);
+      if (rooms?.size === 0) this.roomsByUser.delete(userId);
+    }
     if (members.size === 0) this.byRoom.delete(roomId);
+    this.invalidateRoom(roomId);
   }
 
   /** Users in the room, each counted once. */
@@ -150,15 +163,24 @@ export class ChatPresenceService {
       }
       after = { name, id };
     }
-    const all = ids
-      .map((id) => this.byUser.get(id)?.member)
-      .filter((member): member is OnlineMember => member !== undefined)
-      .filter((member) => needle === '' || member.username.toLowerCase().startsWith(needle))
-      .sort(
-        (a, b) =>
-          a.username.toLowerCase().localeCompare(b.username.toLowerCase()) ||
-          a.id.localeCompare(b.id),
-      );
+    const now = Date.now();
+    let snapshot = this.sortedRoomCache.get(roomId);
+    if (!snapshot || now >= snapshot.expiresAt) {
+      const members = ids
+        .map((id) => this.byUser.get(id)?.member)
+        .filter((member): member is OnlineMember => member !== undefined)
+        .sort(
+          (a, b) =>
+            compareCursorValue(a.username.toLowerCase(), b.username.toLowerCase()) ||
+            compareCursorValue(a.id, b.id),
+        );
+      snapshot = { members, expiresAt: now + 2_000 };
+      if (this.sortedRoomCache.size >= 1_000) this.sortedRoomCache.delete(this.sortedRoomCache.keys().next().value!);
+      this.sortedRoomCache.set(roomId, snapshot);
+    }
+    const all = needle === ''
+      ? snapshot.members
+      : snapshot.members.filter((member) => member.username.toLowerCase().startsWith(needle));
     const start = after
       ? all.findIndex((m) => {
           const name = m.username.toLowerCase();
@@ -239,4 +261,13 @@ export class ChatPresenceService {
       await pipeline.exec();
     }
   }
+
+  private invalidateRoom(roomId: string): void {
+    this.firstPageCache.delete(roomId);
+    this.sortedRoomCache.delete(roomId);
+  }
+}
+
+function compareCursorValue(a: string, b: string): number {
+  return a < b ? -1 : a > b ? 1 : 0;
 }

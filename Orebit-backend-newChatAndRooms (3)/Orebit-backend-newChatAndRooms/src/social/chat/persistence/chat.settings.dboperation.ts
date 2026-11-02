@@ -60,6 +60,18 @@ export class ChatSettingsDbOperation {
     return this.prisma.$transaction(work);
   }
 
+  savepoint(tx: Tx): Promise<number> {
+    return tx.$executeRawUnsafe('SAVEPOINT chat_scheduled_change');
+  }
+
+  rollbackSavepoint(tx: Tx): Promise<number> {
+    return tx.$executeRawUnsafe('ROLLBACK TO SAVEPOINT chat_scheduled_change');
+  }
+
+  releaseSavepoint(tx: Tx): Promise<number> {
+    return tx.$executeRawUnsafe('RELEASE SAVEPOINT chat_scheduled_change');
+  }
+
   /** Scheduled changes whose time has come on the database clock; SKIP LOCKED so two ticks never take the same one. */
   dueChanges(tx: Tx): Promise<DueSettingsChange[]> {
     return tx.$queryRaw<DueSettingsChange[]>`
@@ -173,8 +185,14 @@ export class ChatSettingsDbOperation {
     if (patch.config && Object.keys(patch.config).length > 0) {
       for (const key of Object.keys(patch.config))
         before.config[key] = current.config?.[key] ?? null;
+      const configPatch = JSON.stringify(patch.config);
       await tx.$executeRaw`
-        UPDATE chat.rooms SET config = config || ${JSON.stringify(patch.config)}::jsonb WHERE id = ${roomId}::uuid
+        UPDATE chat.rooms
+        SET config = (config || (${configPatch}::jsonb - 'contentControls')) || jsonb_build_object(
+          'contentControls',
+          COALESCE(config -> 'contentControls', '{}'::jsonb) || COALESCE(${configPatch}::jsonb -> 'contentControls', '{}'::jsonb)
+        )
+        WHERE id = ${roomId}::uuid
       `;
     }
 

@@ -8,7 +8,7 @@
 // with whom you never had chat".
 // Every public method of the DM services starts with `assertOpen`: DMs OFF refuse everything, MAINTENANCE refuses
 // writes, typing and read signals and still reads.
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { ERR } from '../../../contracts';
 import { ProblemException } from '../../../http';
 import { CHAT_REFUSAL_REASONS, GLOBAL_ROOM_ID, LIMITS, PAGE, SERVER_EVENTS } from '../chat.constants';
@@ -58,6 +58,7 @@ export interface DmSendInput {
 
 @Injectable()
 export class DmService {
+  private readonly logger = new Logger(DmService.name);
 
   constructor(
     private readonly dm: DmDbOperation,
@@ -97,7 +98,9 @@ export class DmService {
         type: 'GIFT',
         metadata: { gift: notice },
       });
-      await this.deliver(row);
+      void this.deliver(row).catch((err: unknown) =>
+        this.logger.error({ err, conversationId: gift.conversationId, messageId: row.id }, 'DM message fan-out failed'),
+      );
     });
   }
 
@@ -193,7 +196,7 @@ export class DmService {
       }
     } else {
       const dbNow = await this.dm.dbNow();
-      await this.moderation.assertNotBanned(user.id, null, dbNow);
+      await this.moderation.assertNotBanned(user, null, dbNow);
       const follow = (await this.ports.follows(user.id, [other.id])).get(other.id)!;
       await this.assertMayDmStranger(user, follow.followedBy, dbNow);
       const mine = directPlacement(true, follow);
@@ -278,7 +281,7 @@ export class DmService {
     // DECLINED is allowed in: the person who declined may write first later and the chat reopens.
     const me = await this.requireMember(user.id, conversationId, ['ACTIVE', 'REQUEST', 'DECLINED']);
     const dbNow = await this.dm.dbNow();
-    await this.moderation.assertNotBanned(user.id, null, dbNow);
+    await this.moderation.assertNotBanned(user, null, dbNow);
 
     const text = utility.normalizeContent(
       input.media ? (input.media.caption ?? input.content ?? '') : (input.content ?? ''),
@@ -310,7 +313,6 @@ export class DmService {
         );
       }
       const follow = (await this.ports.follows(user.id, [other.userId])).get(other.userId)!;
-      await this.assertMayDmStranger(user, follow.followedBy, dbNow);
       // Links and media (images, videos, GIFs) are for friends only; forwarding comes through here too.
       if ((links.length > 0 || input.media) && !(follow.following && follow.followedBy)) {
         throw refuse(
@@ -407,7 +409,9 @@ export class DmService {
     });
     if (!duplicate) {
       if (media) this.moderation.recordMediaSent(user.id, dbNow);
-      await this.deliver(row);
+      void this.deliver(row).catch((err: unknown) =>
+        this.logger.error({ err, conversationId, messageId: row.id }, 'DM message fan-out failed'),
+      );
     }
     return { message: toDmView(row, user.id), duplicate };
   }

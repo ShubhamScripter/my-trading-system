@@ -1,4 +1,4 @@
-// Group invites (Module 9, , ): "If user has to add someone they'll have to send invite". Every limit is an
+// Group invites (Module 9): "If user has to add someone they'll have to send invite". Every limit is an
 // admin setting with no built-in number (invites per window, pending invites per person, the time an invite lives);
 // an unset one refuses inviting. A blocked person looks exactly like an unknown one, a person is never invited twice
 // (the pending invite is the same one), and an invite ends by itself or can be revoked.
@@ -30,6 +30,14 @@ export class DmGroupInvitesService {
     private readonly delivery: ChatDelivery,
   ) {}
 
+  async preflightCreateWithInvites(): Promise<void> {
+    const groups = (await this.base.open(true)).groups;
+    requireLimit(groups.invitesPerWindow, 'groups.invitesPerWindow');
+    requireLimit(groups.inviteWindowHours, 'groups.inviteWindowHours');
+    requireLimit(groups.maxPendingInvitesPerPerson, 'groups.maxPendingInvitesPerPerson');
+    requireLimit(groups.inviteExpiryHours, 'groups.inviteExpiryHours');
+  }
+
   // "If user has to add someone they'll have to send invite": adding is always an invite the user accepts.
   async invite(user: ChatUserContext, groupId: string, userIds: string[]) {
     const settings = await this.base.open(true);
@@ -59,7 +67,7 @@ export class DmGroupInvitesService {
     }
     // One read of the members and one of the bans, not one query per person.
     const blocked = await this.relations.blockedEitherWay(user.id, ids);
-    const members = new Map((await this.dm.members(groupId)).map((m) => [m.userId, m]));
+    const activeMembers = await this.dm.activeMembersAmong(groupId, ids);
     const banned = await this.bansDb.bannedAmong(groupId, ids);
     for (const id of ids) {
       const handle = nameOf.get(id) ?? id;
@@ -68,7 +76,7 @@ export class DmGroupInvitesService {
         skipped.push({ username: handle, reason: 'not_found' });
         continue;
       }
-      if (members.get(id)?.state === 'ACTIVE') {
+      if (activeMembers.has(id)) {
         skipped.push({ username: handle, reason: 'already_member' });
         continue;
       }
@@ -83,10 +91,12 @@ export class DmGroupInvitesService {
       }
       const inviteId = made.inviteId;
       invited.push({ username: handle, inviteId });
-      this.delivery.toUser(id, SERVER_EVENTS.DM_CONVERSATION_UPDATED, {
-        conversationId: groupId,
-        invite: { inviteId, groupName: group.name, inviterUsername: user.username },
-      });
+      if (made.created) {
+        this.delivery.toUser(id, SERVER_EVENTS.DM_CONVERSATION_UPDATED, {
+          conversationId: groupId,
+          invite: { inviteId, groupName: group.name, inviterUsername: user.username },
+        });
+      }
     }
     return { invited, skipped };
   }

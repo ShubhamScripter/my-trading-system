@@ -10,6 +10,7 @@ import { RainAdminService, formatMinor } from '../../src/social/rain/rain-admin.
 const ADMIN = '0192f6a0-0000-7000-8000-00000000aa01';
 const USER = '0192f6a0-0000-7000-8000-00000000bb01';
 const RAIN = '0192f6a0-0000-7000-8000-00000000dd01';
+const MANUAL_SYSTEM = { currency: 'BTC', usdAmount: '5', roomId: RAIN, recipients: 10 };
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- loose fakes of the database layers
 type Fake = any;
@@ -237,12 +238,15 @@ describe('RainAdminService', () => {
 
   describe('Rainpool trigger', () => {
     it('is refused unless Rainpool is ON, and queued once', async () => {
-      expect((await problem(() => service.trigger(ADMIN))).detail).toMatch(/not ON/);
-      stored = configWith((c) => (c.status.system = 'ON'));
-      await service.trigger(ADMIN);
-      expect(db.enqueue).toHaveBeenCalledWith(expect.objectContaining({ kind: 'MANUAL_SYSTEM' }));
+      expect((await problem(() => service.trigger(MANUAL_SYSTEM, ADMIN))).detail).toMatch(/not ON/);
+      stored = configWith((c) => {
+        c.status.system = 'ON';
+        c.system.currencies = ['BTC'];
+      });
+      await service.trigger(MANUAL_SYSTEM, ADMIN);
+      expect(db.enqueue).toHaveBeenCalledWith(expect.objectContaining({ kind: 'MANUAL_SYSTEM', manualSystem: MANUAL_SYSTEM }));
       db.openJob.mockResolvedValue(true);
-      expect((await problem(() => service.trigger(ADMIN))).detail).toMatch(/already waiting/);
+      expect((await problem(() => service.trigger(MANUAL_SYSTEM, ADMIN))).detail).toMatch(/already waiting/);
     });
 
     it('overall OFF ("Disable Overall Rains") stops a trigger too', async () => {
@@ -250,7 +254,7 @@ describe('RainAdminService', () => {
         c.status.system = 'ON';
         c.status.overall = 'OFF';
       });
-      expect((await problem(() => service.trigger(ADMIN))).detail).toMatch(/not ON/);
+      expect((await problem(() => service.trigger(MANUAL_SYSTEM, ADMIN))).detail).toMatch(/not ON/);
     });
   });
 

@@ -1,7 +1,7 @@
 // A user's DM privacy and lookups (Module 8, , , , , , , ): last seen, common
 // groups, notifications per folder, quiet mode (in the account time zone), the one typing/read switch; finding a person
 // by username only (a blocked person looks like an unknown one); and the folder move when a follow changes.
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { ERR } from '../../../contracts';
 import { ProblemException } from '../../../http';
 import { CHAT_REFUSAL_REASONS, SERVER_EVENTS } from '../chat.constants';
@@ -24,6 +24,7 @@ const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
 
 @Injectable()
 export class DmPrivacyService {
+  private readonly logger = new Logger('DmPrivacyService');
   constructor(
     private readonly dm: DmDbOperation,
     private readonly inbox: DmInboxDbOperation,
@@ -38,7 +39,9 @@ export class DmPrivacyService {
     // The Social module tells chat when a follow changes; the direct chat of the two moves by the folder rules.
     bus.subscribe((change) => {
       if (change.kind !== 'follow') return;
-      return this.onFollowChanged(change.userA, change.userB).catch(() => undefined);
+      return this.onFollowChanged(change.userA, change.userB).catch((err: unknown) => {
+        this.logger.warn({ err, userA: change.userA, userB: change.userB }, 'could not apply DM follow change');
+      });
     });
   }
 
@@ -55,7 +58,7 @@ export class DmPrivacyService {
     const stored = (await this.inbox.prefs([user.id])).get(user.id)!;
     // the quiet-mode zone is the account time zone (Auth/User owns it); no zone, no auto-night.
     const zone = (await this.chatPorts.accountTimeZones([user.id])).get(user.id) ?? null;
-    const prefs = { ...effectivePrefs(settings, stored), timeZone: zone };
+    const prefs = effectivePrefs(settings, { ...stored, timeZone: zone });
     return {
       lastSeenVisibility:
         (stored.lastSeenVisibility as VisibilityChoice | null) ?? settings.privacy.lastSeenDefault,

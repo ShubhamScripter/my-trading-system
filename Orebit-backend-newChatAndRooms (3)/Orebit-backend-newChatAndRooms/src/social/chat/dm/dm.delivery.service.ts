@@ -36,7 +36,11 @@ export class DmDeliveryService {
     const ids = members.map((m) => m.userId);
     const settings = system ? null : await this.settingsService.global();
     const prefs = system ? null : await this.inbox.prefs(ids);
-    const zones = system ? null : await this.chatPorts.accountTimeZones(ids);
+    const quietIds = system || !settings || !prefs ? [] : members
+      .filter((member) => member.userId !== row.senderId)
+      .filter((member) => effectivePrefs(settings, { ...prefs.get(member.userId)!, timeZone: null }).quietMode !== 'OFF')
+      .map((member) => member.userId);
+    const zones = quietIds.length === 0 ? null : await this.chatPorts.accountTimeZones(quietIds);
     // Quiet hours are judged on the database clock, like every business time.
     const now = system ? null : await this.dm.dbNow();
     const senderView = toDmView(row, row.senderId);

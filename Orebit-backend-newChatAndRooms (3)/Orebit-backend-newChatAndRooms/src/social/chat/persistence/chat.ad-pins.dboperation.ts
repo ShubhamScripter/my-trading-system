@@ -16,21 +16,23 @@ export interface PlacementRecord {
 }
 
 // Queues a pinned slot (used inside the transaction that activates or resumes an ad).
-export async function enqueuePin(db: Db, adId: string, roomId: string, minutes: number): Promise<void> {
+export async function enqueuePin(db: Db, adId: string, roomId: string, durationSeconds: number): Promise<void> {
+  const safeSeconds = Math.max(1, Math.trunc(durationSeconds));
+  const minutes = Math.ceil(safeSeconds / 60);
   await db.$executeRaw`
-    INSERT INTO chat.chat_ad_placements (id, ad_id, room_id, minutes, status)
-    VALUES (${uuidv7()}::uuid, ${adId}::uuid, ${roomId}::uuid, ${minutes}, 'QUEUED')
+    INSERT INTO chat.chat_ad_placements (id, ad_id, room_id, minutes, duration_seconds, status)
+    VALUES (${uuidv7()}::uuid, ${adId}::uuid, ${roomId}::uuid, ${minutes}, ${safeSeconds}, 'QUEUED')
   `;
 }
 
 // Minutes of pinned time an ad has already had. The pinned minutes are charged once per ad, so the ad has had as
 // many minutes as its best room gave it; rooms are not added together.
-export async function pinnedMinutesUsedOf(db: Db, adId: string): Promise<number> {
+export async function pinnedSecondsUsedOf(db: Db, adId: string): Promise<number> {
   const rows = await db.$queryRaw<{ used: number | null }[]>`
     SELECT COALESCE(max(room_used), 0)::int AS used FROM (
       SELECT sum(CASE
-        WHEN status = 'DONE' THEN minutes
-        WHEN status = 'ACTIVE' THEN LEAST(minutes, ceil(extract(epoch FROM (now() - starts_at)) / 60))
+        WHEN status = 'DONE' THEN duration_seconds
+        WHEN status = 'ACTIVE' THEN LEAST(duration_seconds, floor(extract(epoch FROM (now() - starts_at))))
         ELSE 0 END) AS room_used
       FROM chat.chat_ad_placements WHERE ad_id = ${adId}::uuid GROUP BY room_id
     ) per_room
@@ -114,6 +116,14 @@ export class ChatAdPinsDbOperation {
     }));
   }
 
+  async cancelledActivePins(adId: string): Promise<string[]> {
+    const rows = await this.prisma.$queryRaw<{ room_id: string }[]>`
+      SELECT room_id FROM chat.chat_ad_placements
+      WHERE ad_id = ${adId}::uuid AND status = 'CANCELLED' AND starts_at IS NOT NULL AND ends_at > now()
+    `;
+    return rows.map((row) => row.room_id);
+  }
+
   // Starts the oldest queued slot of every room with nothing showing, on the database clock. Paused or cancelled ads
 // are skipped. Returns the slots started.
   async startQueuedPins(): Promise<PlacementRecord[]> {
@@ -123,6 +133,7 @@ export class ChatAdPinsDbOperation {
         ad_id: string;
         room_id: string;
         minutes: number;
+        duration_seconds: number;
         starts_at: Date;
         ends_at: Date;
       }[]
@@ -136,9 +147,9 @@ export class ChatAdPinsDbOperation {
         ORDER BY p.room_id, p.created_at, p.id
       )
       UPDATE chat.chat_ad_placements p
-      SET status = 'ACTIVE', starts_at = now(), ends_at = now() + make_interval(mins => p.minutes)
+      SET status = 'ACTIVE', starts_at = now(), ends_at = now() + make_interval(secs => p.duration_seconds)
       FROM next WHERE p.id = next.id
-      RETURNING p.id, p.ad_id, p.room_id, p.minutes, p.starts_at, p.ends_at
+      RETURNING p.id, p.ad_id, p.room_id, p.minutes, p.duration_seconds, p.starts_at, p.ends_at
     `;
     return rows.map((row) => ({
       id: row.id,
@@ -150,8 +161,8 @@ export class ChatAdPinsDbOperation {
     }));
   }
 
-  // Minutes of pinned time this ad has already had (for refunds).
-  pinnedMinutesUsed(adId: string): Promise<number> {
-    return pinnedMinutesUsedOf(this.prisma, adId);
+  // Exact pinned seconds this ad has already had (for prorated refunds).
+  pinnedSecondsUsed(adId: string): Promise<number> {
+    return pinnedSecondsUsedOf(this.prisma, adId);
   }
 }

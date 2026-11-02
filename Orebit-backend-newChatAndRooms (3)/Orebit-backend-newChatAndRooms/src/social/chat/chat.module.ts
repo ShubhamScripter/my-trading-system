@@ -1,7 +1,6 @@
 import { Module } from '@nestjs/common';
 import { AuthModule } from '../../../auth/auth.module';
 import { TwoFactorModule } from '../../2fa/2fa.module';
-import { RestrictionsCoreModule } from '../../restrictions/restrictions.core.module';
 import { ChatAccessService } from './chat.access.service';
 import { ChatAccountService } from './services/chat.account.service';
 import { ChatAuthHelper } from './chat.auth.helper';
@@ -100,21 +99,17 @@ import { RainRoutes } from '../rain/rain.routes';
 import { RainScheduler } from '../rain/rain.scheduler';
 import { RainService } from '../rain/rain.service';
 import { RainWallet } from '../rain/rain.wallet';
-import { SessionDbOperation } from '../../../auth/persistence/session.dboperation';
-import { SecurityRestrictionRiskEvaluator } from '../../restrictions/restrictions.evaluator';
-import { RainEmailCode } from '../rain/rain.email-code';
 import { RainPorts } from '../rain/rain.ports';
 import { ChatMoneyRevertDbOperation } from './persistence/chat.money-revert.dboperation';
 import { ChatMoneyRevertService } from './services/chat.money-revert.service';
 
 // The chat module (Modules 1–9 of the chat roadmap). See README.md in this folder.
 // AuthModule is imported for `SessionService` (whether a session is still live); chat never edits auth code.
-// TwoFactorModule answers 2FA codes for gifts and group ownership transfers (chat.feature-ports.ts).
+// TwoFactorModule provides the payment-PIN and transfer-confirmation capability through chat.feature-ports.ts.
 // Facts owned by other modules come through the ports in chat.ports.ts: a module binds its provider here, e.g.
 // `{ provide: CHAT_PREMIUM_PORT, useExisting: PremiumChatProvider }`, and nothing else in chat changes.
 @Module({
-  // RestrictionsCoreModule: the login-history evaluator rain's security tiers read (new IP / new country).
-  imports: [AuthModule, TwoFactorModule, RestrictionsCoreModule],
+  imports: [AuthModule, TwoFactorModule],
   controllers: [ChatRoutes, ChatStaffRoutes, ChatSocialRoutes, DmRoutes, SupportRoutes, RainRoutes],
   providers: [
     ChatController,
@@ -211,11 +206,6 @@ import { ChatMoneyRevertService } from './services/chat.money-revert.service';
     RainSchedulerService,
     RainWallet,
     RainPorts,
-    RainEmailCode,
-    // Rain asks the login history which context a request comes from. Chat's own copies, stateless, so the
-    // restrictions module does not have to export them.
-    SessionDbOperation,
-    SecurityRestrictionRiskEvaluator,
     RainService,
     RainScheduler,
     RainAdminService,

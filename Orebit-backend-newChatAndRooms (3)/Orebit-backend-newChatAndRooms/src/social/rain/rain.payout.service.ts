@@ -31,17 +31,18 @@ export class RainPayoutService {
     fee: string;
     distributable: string;
     recipients: number;
-    shares: { userId: string; amount: string; tier: string }[];
+    shares: { username: string | null; amount: string; tier: string }[];
     messageId?: string;
   }> {
     const shares = await this.db.sharesOf(run.id);
+    const usernames = await this.db.usernamesByIds(shares.map((share) => share.userId));
     let messageId = run.messageId ?? undefined;
     if (!messageId) {
       const who = run.kind === 'SYSTEM' ? 'Rainpool' : 'Rain';
       const usd = run.usdValueMinor != null ? ` (~${formatMinor(run.usdValueMinor)} USD)` : '';
       const text = `${who}: ${formatMinor(run.distributableMinor)} ${run.currency}${usd} across ${shares.length} people.`;
       try {
-        const row = await this.chat.postSystemAlert('RAIN', text, run.roomId);
+        const row = await this.chat.postSystemAlert('RAIN', text, run.roomId, shares.map((share) => share.userId));
         await this.db.setMessage(run.id, row.id);
         messageId = row.id;
         if (run.kind === 'USER' && run.initiatorId) {
@@ -85,7 +86,7 @@ export class RainPayoutService {
       fee: formatMinor(run.feeMinor),
       distributable: formatMinor(run.distributableMinor),
       recipients: shares.length,
-      shares: shares.map((s) => ({ userId: s.userId, amount: formatMinor(s.amount), tier: s.tier })),
+      shares: shares.map((s) => ({ username: usernames.get(s.userId) ?? null, amount: formatMinor(s.amount), tier: s.tier })),
       messageId,
     };
   }

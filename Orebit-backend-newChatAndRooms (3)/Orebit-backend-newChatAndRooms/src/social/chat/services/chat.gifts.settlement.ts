@@ -24,6 +24,10 @@ export class ChatGiftsSettlementService {
   ) {}
 
   async run(config: MoneyJobConfig, until: number): Promise<void> {
+    while (Date.now() < until) {
+      const cancelled = await this.gifts.cancelExpiredVerification(config.pageSize);
+      if (cancelled < config.pageSize) break;
+    }
     await this.processReverts(config, until);
     await this.reconcileProcessing(config, until);
   }
@@ -91,14 +95,18 @@ export class ChatGiftsSettlementService {
           if (!gift || gift.status !== 'PROCESSING') continue;
           const answer = transfer ? await transfer.status(gift.id) : { state: 'UNKNOWN' as const };
           if (answer.state === 'COMPLETED') {
-            await this.giftService.completeTransfer(gift, answer.reference, null);
-            settled += 1;
+            if (await this.giftService.completeTransfer(gift, answer.reference, null)) settled += 1;
+            else this.logger.error({ giftId: gift.id }, 'completed transfer could not update its gift row');
           } else if (answer.state === 'FAILED') {
             await this.gifts.finish(gift.id, 'FAILED', null, answer.reason);
             settled += 1;
           } else if (answer.state === 'NOT_FOUND') {
-            await this.gifts.finish(gift.id, 'FAILED', null, 'the transfer never started');
-            settled += 1;
+            if (transfer && await transfer.void(gift.id)) {
+              await this.gifts.finish(gift.id, 'FAILED', null, 'the transfer reference was voided');
+              settled += 1;
+            } else {
+              await this.gifts.release(id);
+            }
           } else {
             await this.gifts.release(id);
           }

@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 import { DEFAULT_RAIN_CONFIG, RainConfigSchema, effectiveStatus } from '../src/social/rain/rain.contract';
 import {
   applyFee,
-  buildLegs,
   desiredRecipientCount,
   distribute,
   formatMinor,
@@ -39,6 +38,7 @@ describe('rain amounts', () => {
     expect(priced.fee).toBe(3n);
     expect(percentToBps(2.5)).toBe(250);
     expect(percentToBps(0.01)).toBe(1);
+    expect(percentToBps(2.55)).toBe(255);
   });
 
   it('formats and parses minor units', () => {
@@ -183,20 +183,6 @@ describe('plan-wise allocation', () => {
   });
 });
 
-describe('ledger legs', () => {
-  it('builds payment legs that sum to zero', () => {
-    const legs = buildLegs({
-      rainId: 'r',
-      payerId: 'payer',
-      feeAccountId: 'fee',
-      pot: 100n,
-      fee: 40n,
-      shares: [{ userId: 'a', amount: 60n, tier: 'NORMAL' }],
-    });
-    expect(sum(legs.map((l) => l.delta))).toBe(0n);
-  });
-});
-
 describe('reversal policies', () => {
   const base = {
     rainId: 'r',
@@ -218,9 +204,12 @@ describe('reversal policies', () => {
     expect(sum(plan.legs.map((l) => l.delta))).toBe(0n);
   });
 
-  it('"do nothing" leaves what is taken back with the platform', () => {
+  it('"do nothing" moves no money and records the uncollected value', () => {
     const plan = reversalPlan({ ...base, held: new Map([['a', 30n], ['b', 30n]]), payerRefund: 'NONE', shortfall: 'ZERO' });
-    expect(plan.creditedTo).toBe('platform');
+    expect(plan.creditedTo).toBe('none');
+    expect(plan.legs).toEqual([]);
+    expect(plan.reclaimed).toBe(0n);
+    expect(plan.missing).toBe(60n);
   });
 
   it('"refund till 0" takes only what a recipient still holds', () => {
@@ -244,7 +233,8 @@ describe('reversal policies', () => {
   });
 
   it('keys a reversal differently from the payment, so both can exist and neither twice', () => {
-    const paid = buildLegs({ rainId: 'r', payerId: 'payer', feeAccountId: 'fee', pot: 60n, fee: 0n, shares: base.shares.map((s) => ({ ...s, tier: 'NORMAL' as const })) }).map((l) => l.key);
+    // RainPayoutService.legsOf uses these keys for a completed payment.
+    const paid = ['r:debit', 'r:a', 'r:b'];
     const back = reversalPlan({ ...base, held: new Map(), payerRefund: 'REFUND', shortfall: 'NEGATIVE' }).legs.map((l) => l.key);
     expect(paid.some((key) => back.includes(key))).toBe(false);
     expect(new Set(back).size).toBe(back.length);

@@ -8,7 +8,6 @@ import { CHAT_REFUSAL_REASONS } from '../chat/chat.constants';
 import { refuse } from '../chat/chat.moderation.service';
 import { ChatPorts } from '../chat/chat.ports';
 import type { ChatUserContext } from '../chat/chat.types';
-import { ChatRestrictionsService } from '../chat/services/chat.restrictions.service';
 import {
   durationSeconds,
   effectiveStatus,
@@ -32,7 +31,6 @@ import {
   type RainShare,
   type RecipientRule,
 } from './rain.math';
-import { RainEmailCode } from './rain.email-code';
 import { RainPorts } from './rain.ports';
 import { needsUsdValue } from './rain.security';
 import { RainWallet } from './rain.wallet';
@@ -69,7 +67,7 @@ export interface UserRainResult {
   readonly fee: string;
   readonly distributable: string;
   readonly recipients: number;
-  readonly shares: { userId: string; amount: string; tier: string }[];
+  readonly shares: { username: string | null; amount: string; tier: string }[];
   readonly verification?: unknown;
   readonly repeat?: { count: number; gapSeconds: number };
   readonly messageId?: string;
@@ -91,10 +89,8 @@ export class RainService {
     private readonly db: RainDbOperation,
     private readonly wallet: RainWallet,
     private readonly access: ChatAccessService,
-    private readonly restrictions: ChatRestrictionsService,
     private readonly chatPorts: ChatPorts,
     private readonly rainPorts: RainPorts,
-    private readonly emailCodes: RainEmailCode,
     private readonly selection: RainSelectionService,
     private readonly payout: RainPayoutService,
     private readonly series: RainSeriesService,
@@ -195,7 +191,14 @@ export class RainService {
 
   async balances(userId: string): Promise<{ currency: string; balance: string }[]> {
     const cfg = await this.db.config();
-    const coins = cfg.user.currencies.all ? ['BTC', 'ETH', 'USDT'] : cfg.user.currencies.codes;
+    const coins = cfg.user.currencies.all ? await this.rainPorts.currencyCodes() : cfg.user.currencies.codes;
+    if (!coins) {
+      throw refuse(
+        ERR.FORBIDDEN,
+        CHAT_REFUSAL_REASONS.FEATURE_UNAVAILABLE,
+        'The wallet currency list is not connected',
+      );
+    }
     const balances = await Promise.all(
       coins.map(async (c) => ({
         currency: c,
@@ -335,7 +338,8 @@ export class RainService {
     await this.prisma.$transaction(async (tx) => {
       await this.wallet.ensurePayer(tx, user.id, seed.currency);
       await this.wallet.apply(tx, this.payout.legsOf(run, user.id), seed.currency);
-      await this.db.insertRun(tx, run);
+      await this.db.insertRun(tx, { ...run, recipientCount: run.shares.length });
+      await this.db.insertShares(tx, run.id, run.shares);
     });
 
     await this.db.audit({
@@ -364,7 +368,17 @@ export class RainService {
   }
 
   async cancel(user: ChatUserContext, rainId: string): Promise<{ cancelled: true }> {
-    await this.db.expireOne(rainId);
+    if (!(await this.db.expireOne(rainId, user.id))) {
+      throw new ProblemException({ type: ERR.NOT_FOUND, detail: 'Pending rain not found' });
+    }
+    await this.db.audit({
+      actorType: 'USER',
+      actorId: user.id,
+      action: 'CANCELLED',
+      rainId,
+      reason: null,
+      detail: { status: 'EXPIRED' },
+    });
     return { cancelled: true };
   }
 

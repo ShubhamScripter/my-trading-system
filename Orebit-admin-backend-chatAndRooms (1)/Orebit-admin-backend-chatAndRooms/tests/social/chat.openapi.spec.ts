@@ -32,12 +32,13 @@ const routes = [ChatRoutes, ChatModulesRoutes, ChatReportStatsRoutes, RainAdminR
 const CHAT_PATH = (path: string) => path.startsWith('/social/chat') || path.startsWith('/social/rain');
 
 describe('openapi.json chat section', () => {
-  it('finds the chat and rain routes', () => expect(routes.length).toBe(85));
+  it('finds the chat and rain routes', () => expect(routes.length).toBe(87));
 
   it.each(routes.map((r) => [`${r.method.toUpperCase()} ${r.path}`, r] as const))(
     '%s is documented',
     (_l, r) => {
-      expect(spec.paths[r.path]?.[r.method], `no ${r.method} ${r.path}`).toBeDefined();
+      const openApiPath = r.path.replace(/:([^/]+)/g, '{$1}');
+      expect(spec.paths[openApiPath]?.[r.method], `no ${r.method} ${openApiPath}`).toBeDefined();
     },
   );
 
@@ -45,7 +46,7 @@ describe('openapi.json chat section', () => {
     const live = new Set(routes.map((r) => `${r.method} ${r.path}`));
     const stale = Object.entries(spec.paths)
       .filter(([path]) => CHAT_PATH(path))
-      .flatMap(([path, ops]) => Object.keys(ops).map((m) => `${m} ${path}`))
+      .flatMap(([path, ops]) => Object.keys(ops).map((m) => `${m} ${path.replace(/\{([^}]+)\}/g, ':$1')}`))
       .filter((key) => !live.has(key));
     expect(stale).toEqual([]);
   });

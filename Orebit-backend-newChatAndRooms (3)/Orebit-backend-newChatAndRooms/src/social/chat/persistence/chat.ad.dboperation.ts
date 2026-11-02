@@ -5,7 +5,7 @@ import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../../db/client';
 import { claimBatch, releaseClaim } from '../platform/jobs';
-import { enqueuePin, pinnedMinutesUsedOf } from './chat.ad-pins.dboperation';
+import { enqueuePin, pinnedSecondsUsedOf } from './chat.ad-pins.dboperation';
 import { type Db } from './chat.sql';
 import type { Cursor } from '../chat.utility';
 import {
@@ -105,6 +105,18 @@ export class ChatAdDbOperation {
     });
   }
 
+  // A charge provider answered PAID after the pending row had already timed out to FAILED. Convert it into the
+  // normal refund queue atomically so the existing idempotent refund worker can return the money.
+  async recordLateChargeRefund(adId: string, chargeReference: string, amountUsd: string): Promise<boolean> {
+    const changed = await this.prisma.$executeRaw`
+      UPDATE chat.chat_ads
+      SET status = 'CANCELLED', charge_reference = ${chargeReference}, refund_usd = ${amountUsd}::numeric,
+          refund_currency = NULL, ended_at = COALESCE(ended_at, now()), cancel_note = 'Late payment for failed ad'
+      WHERE id = ${adId}::uuid AND status = 'FAILED' AND charge_reference IS NULL
+    `;
+    return changed > 0;
+  }
+
   // Ads left PENDING_PAYMENT for `minutes`, claimed for the payment check (a crashed checker's claim is taken over).
   async claimPendingPayments(minutes: number, limit: number, staleSeconds: number): Promise<AdRecord[]> {
     const ids = await claimBatch(this.prisma, {
@@ -120,6 +132,13 @@ export class ChatAdDbOperation {
   // The claim goes back so the next pass tries again (a payment check that could not answer).
   releaseAd(adId: string): Promise<void> {
     return releaseClaim(this.prisma, 'chat_ads', adId);
+  }
+
+  async deferPost(adId: string, seconds = 30): Promise<void> {
+    await this.prisma.$executeRaw`
+      UPDATE chat.chat_ads SET claimed_at = NULL, next_post_at = now() + make_interval(secs => ${seconds}::int)
+      WHERE id = ${adId}::uuid AND status = 'ACTIVE'
+    `;
   }
 
   private async byIds(ids: readonly string[]): Promise<AdRecord[]> {
@@ -199,7 +218,9 @@ export class ChatAdDbOperation {
   async completedWithoutRewards(): Promise<{ id: string; creatorId: string | null; priceUsd: string }[]> {
     const rows = await this.prisma.$queryRaw<{ id: string; creator_id: string | null; price_usd: Prisma.Decimal }[]>`
       SELECT id, creator_id, price_usd FROM chat.chat_ads
-      WHERE status = 'COMPLETED' AND creator_id IS NOT NULL AND rewards = '{}'::jsonb
+      WHERE status = 'COMPLETED' AND creator_id IS NOT NULL
+        AND (rewards = '{}'::jsonb OR rewards->>'awarded' = 'false')
+      ORDER BY created_at, id
       LIMIT 50
     `;
     return rows.map((r) => ({ id: r.id, creatorId: r.creator_id, priceUsd: r.price_usd.toString() }));
@@ -212,8 +233,9 @@ export class ChatAdDbOperation {
     adId: string,
     by: string | null,
     note: string | null,
-    refundOf: (ad: AdRecord, pinnedMinutesUsed: number) => string | null,
+    refundOf: (ad: AdRecord, pinnedSecondsUsed: number) => string | null,
     refundCurrency: string | null = null,
+    preserveActivePins = false,
   ): Promise<{ cancelled: boolean; unpinnedRoomIds: string[]; refundUsd: string | null }> {
     return this.prisma.$transaction(async (tx) => {
       const rows = await tx.$queryRaw<AdSqlRow[]>`
@@ -221,17 +243,19 @@ export class ChatAdDbOperation {
       `;
       if (!rows[0]) return { cancelled: false, unpinnedRoomIds: [], refundUsd: null };
       const ad = toAd(rows[0]);
-      const shown = (ad.pinMinutes ?? 0) > 0 ? await pinnedMinutesUsedOf(tx, adId) : 0;
+      const shown = (ad.pinMinutes ?? 0) > 0 ? await pinnedSecondsUsedOf(tx, adId) : 0;
       const refundUsd = refundOf(ad, shown);
       await tx.$executeRaw`
         UPDATE chat.chat_ads
         SET status = 'CANCELLED', ended_at = now(), next_post_at = NULL, claimed_at = NULL, cancelled_by = ${by}::uuid,
-            cancel_note = ${note}, refund_usd = ${refundUsd}::numeric, refund_currency = ${refundCurrency}
+            cancel_note = ${note}, refund_usd = ${refundUsd}::numeric, refund_currency = ${refundCurrency},
+            revert_rewards = true
         WHERE id = ${adId}::uuid
       `;
       const ended = await tx.$queryRaw<{ room_id: string; was_active: boolean }[]>`
         UPDATE chat.chat_ad_placements SET status = 'CANCELLED'
         WHERE ad_id = ${adId}::uuid AND status IN ('QUEUED', 'ACTIVE')
+          ${preserveActivePins ? Prisma.sql`AND status = 'QUEUED'` : Prisma.empty}
         RETURNING room_id, (starts_at IS NOT NULL) AS was_active
       `;
       return {
@@ -301,25 +325,31 @@ export class ChatAdDbOperation {
     `;
   }
 
-  async adsWithStatus(statuses: readonly AdStatus[]): Promise<AdRecord[]> {
+  async adsWithStatus(statuses: readonly AdStatus[], afterId: string | null, limit: number): Promise<AdRecord[]> {
     const rows = await this.prisma.$queryRaw<AdSqlRow[]>`
-      ${AD_SELECT} WHERE status = ANY(${[...statuses]}::text[]) ORDER BY created_at
+      ${AD_SELECT}
+      WHERE status = ANY(${[...statuses]}::text[])
+        AND (${afterId}::uuid IS NULL OR id > ${afterId}::uuid)
+      ORDER BY id
+      LIMIT ${limit}
     `;
     return rows.map(toAd);
   }
 
   // "Pause Existing Ads": every ACTIVE ad becomes PAUSED. A pinned slot showing now ends with the minutes it had, and
 // the rest of its time waits in the queue for the resume. Returns the rooms whose pinned ad came down.
-  async pauseActive(): Promise<{ paused: number; unpinned: { roomId: string; adId: string }[] }> {
+  async pauseActive(onlyAdIds?: readonly string[]): Promise<{ paused: number; unpinned: { roomId: string; adId: string }[] }> {
     return this.prisma.$transaction(async (tx) => {
       const paused = await tx.$queryRaw<{ id: string }[]>`
-        UPDATE chat.chat_ads SET status = 'PAUSED' WHERE status = 'ACTIVE' RETURNING id
+        UPDATE chat.chat_ads SET status = 'PAUSED' WHERE status = 'ACTIVE'
+          ${onlyAdIds ? Prisma.sql`AND id = ANY(${[...onlyAdIds]}::uuid[])` : Prisma.empty}
+        RETURNING id
       `;
       if (paused.length === 0) return { paused: 0, unpinned: [] };
       const ids = paused.map((row) => row.id);
-      const showing = await tx.$queryRaw<{ id: string; ad_id: string; room_id: string; minutes: number; used: number }[]>`
-        SELECT id, ad_id, room_id, minutes,
-               LEAST(minutes, ceil(extract(epoch FROM (now() - starts_at)) / 60))::int AS used
+      const showing = await tx.$queryRaw<{ id: string; ad_id: string; room_id: string; minutes: number; duration_seconds: number; used: number }[]>`
+        SELECT id, ad_id, room_id, minutes, duration_seconds,
+               LEAST(duration_seconds, floor(extract(epoch FROM (now() - starts_at))))::int AS used
         FROM chat.chat_ad_placements
         WHERE ad_id = ANY(${ids}::uuid[]) AND status = 'ACTIVE'
         FOR UPDATE
@@ -333,10 +363,13 @@ export class ChatAdDbOperation {
           continue;
         }
         await tx.$executeRaw`
-          UPDATE chat.chat_ad_placements SET status = 'DONE', minutes = ${slot.used}, ends_at = now()
+          UPDATE chat.chat_ad_placements SET status = 'DONE', duration_seconds = ${slot.used},
+            minutes = ceil(${slot.used}::numeric / 60)::int, ends_at = now()
           WHERE id = ${slot.id}::uuid
         `;
-        if (slot.minutes > slot.used) await enqueuePin(tx, slot.ad_id, slot.room_id, slot.minutes - slot.used);
+        if (slot.duration_seconds > slot.used) {
+          await enqueuePin(tx, slot.ad_id, slot.room_id, slot.duration_seconds - slot.used);
+        }
       }
       return {
         paused: paused.length,
@@ -361,10 +394,10 @@ export class ChatAdDbOperation {
         for (const ad of resumed) {
           await tx.$executeRaw`
             UPDATE chat.chat_ad_placements SET status = 'CANCELLED'
-            WHERE ad_id = ${ad.id}::uuid AND status = 'QUEUED'
+            WHERE ad_id = ${ad.id}::uuid AND status IN ('QUEUED', 'DONE')
           `;
           if (ad.pin_minutes) {
-            for (const roomId of ad.room_ids ?? []) await enqueuePin(tx, ad.id, roomId, ad.pin_minutes);
+            for (const roomId of ad.room_ids ?? []) await enqueuePin(tx, ad.id, roomId, ad.pin_minutes * 60);
           }
         }
       }

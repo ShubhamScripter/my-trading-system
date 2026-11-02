@@ -52,6 +52,12 @@ type SendAck = Ack<
   { messageId: string; createdAt: string } | { command: string; roomId: string; result: unknown }
 >;
 
+function isTransientDatabaseOverload(err: unknown): boolean {
+  if (typeof err !== 'object' || err === null || !('code' in err)) return false;
+  const code = (err as { code?: unknown }).code;
+  return code === 'P2024' || code === 'P2028';
+}
+
 @UseFilters(ChatWsExceptionFilter)
 @WebSocketGateway({
   namespace: '/chat',
@@ -65,6 +71,7 @@ export class ChatGateway
   @WebSocketServer() server!: Server;
   private readonly logger = new Logger('ChatGateway');
   private pendingHandshakes = 0;
+  private pendingSends = 0;
   private readonly buckets = new WeakMap<Socket, Bucket>();
   private readonly sendChains = new WeakMap<Socket, Promise<unknown>>();
   private readonly lastSearch = new WeakMap<Socket, number>();
@@ -167,7 +174,7 @@ export class ChatGateway
       next();
     } catch (err: unknown) {
       const reason =
-        err instanceof HandshakeRefusal ? err.reason : constants.HANDSHAKE_REFUSALS.UNAUTHENTICATED;
+        err instanceof HandshakeRefusal ? err.reason : constants.HANDSHAKE_REFUSALS.SESSION_STORE_UNAVAILABLE;
       if (!(err instanceof HandshakeRefusal))
         this.logger.error({ component: 'ChatGateway', err }, 'chat handshake failed');
       this.logger.debug(
@@ -234,13 +241,12 @@ export class ChatGateway
     }
   }
 
-  handleDisconnect(socket: ChatSocket): void {
+  async handleDisconnect(socket: ChatSocket): Promise<void> {
     const user = socket.data?.user;
     if (!user) return;
     const roomId = socket.data.roomId;
     if (roomId) {
-      this.presence.leaveRoom(roomId, user.id);
-      this.delivery.scheduleCount(roomId);
+      await this.rooms.leave(socket);
     }
     if (this.presence.remove(socket)) this.relations.unload(user.id);
   }
@@ -316,9 +322,21 @@ export class ChatGateway
     @MessageBody() payload: dto.SendMessageDto,
     @ConnectedSocket() socket: ChatSocket,
   ): Promise<SendAck> {
+    if (this.pendingSends >= constants.TIMERS.MAX_PENDING_SENDS) {
+      this.countRefusal(ERR.SERVER_BUSY);
+      return Promise.resolve(
+        ackError(ERR.SERVER_BUSY, 'Chat is busy; retry shortly', { reason: ERR.SERVER_BUSY }, 1),
+      );
+    }
+    this.pendingSends += 1;
     // One send at a time per socket, so messages are stored and broadcast in the order they were sent.
     const previous = this.sendChains.get(socket) ?? Promise.resolve();
-    const run = previous.catch(() => undefined).then(() => this.send(payload, socket));
+    const run = previous
+      .catch(() => undefined)
+      .then(() => this.send(payload, socket))
+      .finally(() => {
+        this.pendingSends = Math.max(0, this.pendingSends - 1);
+      });
     this.sendChains.set(socket, run);
     return run;
   }
@@ -364,6 +382,10 @@ export class ChatGateway
           remainingSeconds: err.extra?.remainingSeconds,
           reason: err.extra?.reason,
         });
+      }
+      if (isTransientDatabaseOverload(err)) {
+        this.countRefusal(ERR.SERVER_BUSY);
+        return ackError(ERR.SERVER_BUSY, 'Chat is busy; retry shortly', { reason: ERR.SERVER_BUSY }, 1);
       }
       return this.fail(err, 'send_message', socket);
     }
@@ -447,7 +469,7 @@ export class ChatGateway
     @ConnectedSocket() socket: ChatSocket,
   ): Promise<Ack<{ roomId: string | null }>> {
     const roomId = socket.data.roomId;
-    this.rooms.leave(socket);
+    await this.rooms.leave(socket);
     socket.emit(constants.SERVER_EVENTS.ROOM_LEFT, { roomId });
     return ackOk({ roomId });
   }

@@ -40,6 +40,11 @@ describe('ChatService (Admin Social Chat)', () => {
           status: 'ACTIVE',
         },
       ]),
+      getActiveRoomIds: vi.fn(async () =>
+        (await fakeDb.getRooms()).filter((room: { deletedAt: Date | null; status: string }) =>
+          room.deletedAt === null && room.status !== 'DISABLED',
+        ).map((room: { id: string }) => room.id),
+      ),
       getRoomBySlug: vi.fn(),
       getRoomById: vi.fn(),
       createRoom: vi.fn().mockResolvedValue(undefined),
@@ -282,6 +287,39 @@ describe('ChatService (Admin Social Chat)', () => {
       expect(res.success).toBe(true);
       expect(fakeDb.retractMessage).toHaveBeenCalledWith('msg-456', 'admin-1', 'tx');
       expect(fakeDb.actOnReport).toHaveBeenCalledWith('rep-2', 'RETRACT_MESSAGE', 'admin-1', expect.any(Function));
+    });
+
+    it('keeps archived DM reports read-only', async () => {
+      fakeDb.getReportById.mockResolvedValue({
+        id: 'rep-archive',
+        status: 'PENDING',
+        reported_user_id: 'user-789',
+        dm_message_id: 'dm-archive',
+        dm_archived: true,
+      });
+      await expect(
+        moderation.actionReport(
+          { reportId: 'rep-archive', action: 'RETRACT_MESSAGE', note: 'old message' },
+          'admin-1',
+        ),
+      ).rejects.toMatchObject({ type: ERR.VALIDATION_FAILED });
+      expect(fakeDb.actOnReport).not.toHaveBeenCalled();
+    });
+
+    it('does not allow a system-ad report to target a user for banning', async () => {
+      fakeDb.getReportById.mockResolvedValue({
+        id: 'rep-ad',
+        status: 'PENDING',
+        reported_user_id: null,
+        message_id: 'msg-ad',
+      });
+      await expect(
+        moderation.actionReport(
+          { reportId: 'rep-ad', action: 'BAN', note: 'Spam', banDurationHours: 24 },
+          'admin-1',
+        ),
+      ).rejects.toMatchObject({ type: ERR.VALIDATION_FAILED });
+      expect(fakeDb.actOnReport).not.toHaveBeenCalled();
     });
 
     it('a WARN is a real warning row, one audit row, and a lower-case warn notice (FR-097)', async () => {

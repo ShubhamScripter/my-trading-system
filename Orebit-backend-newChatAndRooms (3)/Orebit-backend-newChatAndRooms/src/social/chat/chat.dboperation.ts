@@ -280,7 +280,7 @@ export class ChatDbOperation {
 
         const row = await this.messageById(id, tx);
         return { row: row!, duplicateOf: null };
-      });
+      }, { maxWait: 500, timeout: 5_000 });
     } catch (err: unknown) {
       if (data.clientMessageId && isUniqueViolation(err)) {
         const first = await this.findClientMessage(data.userId, data.clientMessageId);

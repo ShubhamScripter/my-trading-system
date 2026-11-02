@@ -65,7 +65,7 @@ export class DmCardsService {
     }
 
     const dbNow = await this.dm.dbNow();
-    await this.moderation.assertNotBanned(user.id, null, dbNow);
+    await this.moderation.assertNotBanned(user, null, dbNow);
     const sender = await this.restrictions.find(user, await this.access.factsFor(user), 'RESTRICT_GIFTS', null, dbNow);
     if (sender) {
       throw refuse(ERR.FORBIDDEN, CHAT_REFUSAL_REASONS.RESTRICTED, sender.reason, {

@@ -224,7 +224,12 @@ export const RewardRuleSchema = z
     amount: z.number().int().min(0).max(1_000_000),
     everyUsd: UsdAmountSchema,
   })
-  .strict();
+  .strict()
+  .superRefine((rule, ctx) => {
+    if (rule.mode === 'DYNAMIC' && Number(rule.everyUsd) <= 0) {
+      ctx.addIssue({ code: 'custom', path: ['everyUsd'], message: 'Must be greater than zero for DYNAMIC rewards' });
+    }
+  });
 export type RewardRule = z.infer<typeof RewardRuleSchema>;
 
 const RewardPairSchema = z.object({ exp: RewardRuleSchema, currency: RewardRuleSchema }).strict();
@@ -276,6 +281,9 @@ export const dmSection = {
   strangerMessageCap: limit(1, 1000),
   merchantMessageCap: limit(1, 1000),
   typingEverySeconds: limit(1, 60),
+  membershipNoticeWindowSeconds: limit(1, 3600),
+  searchMinLength: limit(1, 100),
+  searchMaxLength: limit(1, 500),
   maxPinnedPeople: limit(0, 100),
   maxPinnedMessages: limit(0, 100),
 };
@@ -288,6 +296,9 @@ const DM_REQUIRED = [
   'strangerMessageCap',
   'merchantMessageCap',
   'typingEverySeconds',
+  'membershipNoticeWindowSeconds',
+  'searchMinLength',
+  'searchMaxLength',
   'maxPinnedPeople',
   'maxPinnedMessages',
 ] as const;

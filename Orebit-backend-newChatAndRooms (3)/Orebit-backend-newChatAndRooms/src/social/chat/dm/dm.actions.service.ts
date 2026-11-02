@@ -39,8 +39,11 @@ export class DmActionsService {
   private async readableMessage(
     user: ChatUserContext,
     messageId: string,
+    includeArchivedForReport = false,
   ): Promise<{ row: DmMessageRow; me: MemberRow }> {
-    const row = await this.messagesDb.messageById(messageId);
+    const row = includeArchivedForReport
+      ? await this.messagesDb.messageForReport(messageId)
+      : await this.messagesDb.messageById(messageId);
     if (!row) throw new ProblemException({ type: ERR.NOT_FOUND, detail: 'Message not found' });
     const me = await this.messages.requireMember(user.id, row.conversationId);
     if (me.kind === 'GROUP' && row.createdAt < me.joinedAt) {
@@ -114,7 +117,7 @@ export class DmActionsService {
     }
     if (pinned) {
       const max = requireLimit((await this.messages.settings()).dm.maxPinnedMessages, 'dm.maxPinnedMessages');
-      if ((await this.messagesDb.pinnedMessages(row.conversationId)).length >= max) {
+      if ((await this.messagesDb.pinnedMessageCount(row.conversationId)) >= max) {
         throw refuse(
           ERR.FORBIDDEN,
           CHAT_REFUSAL_REASONS.LIMIT_REACHED,
@@ -201,7 +204,7 @@ export class DmActionsService {
     dto: { reason: string; details?: string },
   ) {
     await this.messages.guard(true);
-    const { row } = await this.readableMessage(user, messageId);
+    const { row } = await this.readableMessage(user, messageId, true);
     if (row.senderId === user.id) {
       throw refuse(
         ERR.FORBIDDEN,

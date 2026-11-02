@@ -10,6 +10,8 @@ import { CHAT_KEY_TTL, CHAT_REDIS_KEYS } from './chat.keys';
 import { ChatBus } from './realtime/chat.bus';
 import { ChatRecordsDbOperation } from './persistence/chat.records.dboperation';
 import type { ChatUserContext } from './chat.types';
+import { ChatAccessService } from './chat.access.service';
+import { ChatRestrictionsService } from './services/chat.restrictions.service';
 
 interface BanEntry {
   readonly roomId: string | null;
@@ -78,6 +80,8 @@ export class ChatModerationService {
     private readonly records: ChatRecordsDbOperation,
     private readonly redis: RedisService,
     private readonly bus: ChatBus,
+    private readonly access: ChatAccessService,
+    private readonly restrictions: ChatRestrictionsService,
   ) {
     this.bus.subscribe((change) => {
       if (change.kind === 'ban') void this.bumpBanVersion(change.userId);
@@ -155,12 +159,21 @@ export class ChatModerationService {
   }
 
   // Banned users can read, and are refused on send, upload, report and retracting their own message.
-  async assertNotBanned(userId: string, roomId: string | null, dbNow: Date): Promise<void> {
-    const ban = await this.activeBan(userId, roomId, dbNow);
+  async assertNotBanned(user: ChatUserContext, roomId: string | null, dbNow: Date): Promise<void> {
+    const ban = await this.activeBan(user.id, roomId, dbNow);
     if (ban) {
       throw refuse(ERR.FORBIDDEN, CHAT_REFUSAL_REASONS.CHAT_BANNED, 'You are banned from chat', {
         expiresAt: ban.expiresAt,
         ...(ban.roomId ? { roomId: ban.roomId } : {}),
+      });
+    }
+    const room = roomId ? await this.access.findRoom(roomId) : null;
+    const facts = await this.access.factsFor(user);
+    const groupMute = await this.restrictions.find(user, facts, 'MUTE', room, dbNow, undefined, true);
+    if (groupMute) {
+      throw refuse(ERR.FORBIDDEN, CHAT_REFUSAL_REASONS.CHAT_BANNED, groupMute.reason, {
+        expiresAt: groupMute.expiresAt,
+        ...(roomId ? { roomId } : {}),
       });
     }
   }

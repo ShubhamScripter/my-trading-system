@@ -11,6 +11,9 @@ function make(document: unknown = {}, version = 1) {
   const db = {
     settingsRow: vi.fn(async () => ({ document, version })),
     transaction: vi.fn(async (work: (tx: unknown) => Promise<unknown>) => work({})),
+    savepoint: vi.fn(async () => 0),
+    rollbackSavepoint: vi.fn(async () => 0),
+    releaseSavepoint: vi.fn(async () => 0),
     dueChanges: vi.fn(async () => [] as unknown[]),
     lockSettingsDocument: vi.fn(async () => ({ global: {}, countries: {} })),
     cancelChange: vi.fn(async () => undefined),
@@ -121,5 +124,21 @@ describe('applying due changes', () => {
     const { service, db } = make();
     expect(await service.applyDueChanges()).toEqual({ settings: false, roomIds: [] });
     expect(db.writeSettingsDocument).not.toHaveBeenCalled();
+  });
+
+  it('rolls back and cancels one failed change, then continues with later changes', async () => {
+    const { service, db } = make();
+    db.dueChanges.mockResolvedValueOnce([
+      change({ id: 'bad', patch: { global: { limits: { cooldownSeconds: 30 } } } }),
+      change({ id: 'good', patch: { global: { limits: { cooldownSeconds: 45 } } } }),
+    ]);
+    db.writeSettingsDocument.mockRejectedValueOnce(new Error('room slug conflict'));
+
+    const result = await service.applyDueChanges();
+
+    expect(result.settings).toBe(true);
+    expect(db.rollbackSavepoint).toHaveBeenCalledTimes(1);
+    expect(db.cancelChange).toHaveBeenCalledWith({}, 'bad');
+    expect(db.finishChange).toHaveBeenCalledWith({}, 'good', { global: {}, countries: {} });
   });
 });

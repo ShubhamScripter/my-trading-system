@@ -96,6 +96,9 @@ function harness(
   const redis = fakeRedis(opts);
   const offences = new Map<string, number>();
   const db = {
+    resolveUserId: vi.fn(async () =>
+      opts.target === null ? null : (opts.target?.id ?? 'target'),
+    ),
     activeBans: vi.fn(async () => opts.bans ?? []),
     createBan: vi.fn(async () => ({ id: 'ban-1', expiresAt: new Date('2026-09-28T13:00:00Z') })),
     createWarning: vi.fn(async () => 'warn-1'),
@@ -129,8 +132,18 @@ function harness(
     if (c.kind === 'notice') notices.push(c.notice);
   });
   // The fake answers for both data classes: chat data (users, pins) and records (bans, warnings, audit).
-  const service = new ChatModerationService(db as never, redis as unknown as RedisService, bus);
   const restrictions = new ChatRestrictionsService(db as never, bus);
+  const access = {
+    findRoom: vi.fn(async () => null),
+    factsFor: vi.fn(async () => FACTS),
+  };
+  const service = new ChatModerationService(
+    db as never,
+    redis as unknown as RedisService,
+    bus,
+    access as never,
+    restrictions,
+  );
   const content = new ChatContentService(
     db as never,
     redis as unknown as RedisService,
@@ -370,7 +383,7 @@ describe('content rules', () => {
 describe('bans', () => {
   it('a permanent ban never expires and carries expiresAt null', async () => {
     const { service } = harness({ bans: [{ roomId: null, expiresAt: null }] });
-    expect(await reason(() => service.assertNotBanned(USER.id, 'room-1', at(99999)))).toMatchObject(
+    expect(await reason(() => service.assertNotBanned(USER, 'room-1', at(99999)))).toMatchObject(
       {
         reason: 'chat_banned',
         extra: { expiresAt: null },
@@ -381,13 +394,13 @@ describe('bans', () => {
   it('a timed ban is judged by database time and reports its end as ISO', async () => {
     const end = at(3600);
     const { service } = harness({ bans: [{ roomId: 'room-1', expiresAt: end }] });
-    expect(await reason(() => service.assertNotBanned(USER.id, 'room-1', at(10)))).toMatchObject({
+    expect(await reason(() => service.assertNotBanned(USER, 'room-1', at(10)))).toMatchObject({
       extra: { expiresAt: end.toISOString() },
     });
-    expect((await reason(() => service.assertNotBanned(USER.id, 'room-1', at(3601)))).type).toBe(
+    expect((await reason(() => service.assertNotBanned(USER, 'room-1', at(3601)))).type).toBe(
       'ok',
     );
-    expect((await reason(() => service.assertNotBanned(USER.id, 'room-2', at(10)))).type).toBe(
+    expect((await reason(() => service.assertNotBanned(USER, 'room-2', at(10)))).type).toBe(
       'ok',
     );
   });
@@ -395,11 +408,11 @@ describe('bans', () => {
   it('a new ban version makes the next check read Postgres again', async () => {
     const { service, db } = harness();
     await service.bumpBanVersion(USER.id);
-    await service.assertNotBanned(USER.id, null, at(0));
-    await service.assertNotBanned(USER.id, null, at(0));
+    await service.assertNotBanned(USER, null, at(0));
+    await service.assertNotBanned(USER, null, at(0));
     expect(db.activeBans).toHaveBeenCalledTimes(1);
     await service.bumpBanVersion(USER.id);
-    await service.assertNotBanned(USER.id, null, at(0));
+    await service.assertNotBanned(USER, null, at(0));
     expect(db.activeBans).toHaveBeenCalledTimes(2);
   });
 });

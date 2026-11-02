@@ -76,6 +76,14 @@ export const DM_MESSAGE_SELECT = Prisma.sql`
   LEFT JOIN identity.users u ON u.id = m.sender_id AND u.deleted_at IS NULL
 `;
 
+export const DM_MESSAGE_REPORT_SELECT = (id: string) => Prisma.sql`
+  SELECT m.id, m.conversation_id, m.sender_id, u.username AS sender_username, m.content, m.type, m.metadata,
+         m.client_message_id, m.created_at, ${TIME_TEXT('m.created_at')} AS created_at_text, m.retracted_at,
+         m.hidden_at, m.pinned_at
+  FROM chat.dm_message_for_report(${id}::uuid, NULL::timestamptz) m
+  LEFT JOIN identity.users u ON u.id = m.sender_id AND u.deleted_at IS NULL
+`;
+
 export const toDmMessage = (row: DmMessageSql): DmMessageRow => ({
   id: row.id,
   conversationId: row.conversation_id,

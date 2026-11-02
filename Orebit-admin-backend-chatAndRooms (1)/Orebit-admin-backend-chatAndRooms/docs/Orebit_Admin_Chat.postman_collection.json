@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "orebit-admin-chat-api",
     "name": "Orebit Admin — Chat",
-    "description": "Admin chat routes (default http://localhost:3002). Sign in through the admin ceremony (POST /auth/login steps, then POST /2fa; the development code is 123456): the response sets the orebit_admin_session cookie, and the CSRF token goes in csrfToken. Every POST sends x-csrf-token. Set roomId and id in the collection variables. Role assignment, chat-wide settings and a broadcast to every room need a SUPER ADMIN login.",
+    "description": "Admin chat routes (default http://localhost:3002). Sign in through the admin ceremony (POST /auth/login steps, then POST /2fa using the code from your configured second-factor provider): the response sets the orebit_admin_session cookie, and the CSRF token goes in csrfToken. Every POST sends x-csrf-token. Set roomId and id in the collection variables. Role assignment, chat-wide settings and a broadcast to every room need a SUPER ADMIN login.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -2606,6 +2606,41 @@
               }
             }
           ]
+        },
+        {
+          "name": "GET /social/chat/money/reverts — Money revert jobs",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{adminBaseUrl}}/social/chat/money/reverts?limit=50",
+              "host": ["{{adminBaseUrl}}"],
+              "path": ["social", "chat", "money", "reverts"],
+              "query": [{"key": "limit", "value": "50"}]
+            },
+            "description": "Review queued and completed ad/gift revert jobs."
+          },
+          "event": [{
+            "listen": "test",
+            "script": {"type": "text/javascript", "exec": ["pm.test('status is 200', function () { pm.response.to.have.status(200); });"]}
+          }]
+        },
+        {
+          "name": "GET /social/chat/money/reverts/:jobId — Money revert job",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{adminBaseUrl}}/social/chat/money/reverts/{{jobId}}",
+              "host": ["{{adminBaseUrl}}"],
+              "path": ["social", "chat", "money", "reverts", "{{jobId}}"]
+            },
+            "description": "Read progress and results for one ad/gift revert job."
+          },
+          "event": [{
+            "listen": "test",
+            "script": {"type": "text/javascript", "exec": ["pm.test('status is 200', function () { pm.response.to.have.status(200); });"]}
+          }]
         },
         {
           "name": "GET /social/chat/commands — Command log",

@@ -117,7 +117,9 @@ function toProblem(err: unknown): Problem {
       return {
         type: ERR.VALIDATION_FAILED,
         status: code,
-        title: (err as Error).message || entry.title,
+        // The exception message may come from a library and can contain internal
+        // details. Only catalogue text is part of the public error contract.
+        title: entry.title,
       };
     }
   }

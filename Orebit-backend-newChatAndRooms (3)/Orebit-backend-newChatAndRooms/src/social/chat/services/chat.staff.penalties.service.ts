@@ -23,6 +23,7 @@ import {
 import { ChatRestrictionsService } from './chat.restrictions.service';
 import { ChatStaffGate, type StaffRequested } from './chat.staff.gate';
 import { ChatStaffService } from './chat.staff.service';
+import * as utility from '../chat.utility';
 
 @Injectable()
 export class ChatStaffPenaltiesService {
@@ -49,27 +50,23 @@ export class ChatStaffPenaltiesService {
   /** Live bans and restrictions, newest first; one user's when `userId` is given. */
   async penalties(
     user: ChatUserContext,
-    query: { userId?: string; limit?: number; before?: string },
+    query: { userId?: string; limit?: number; before?: string; restrictionBefore?: string },
   ) {
     this.staffOnly(user);
     await this.gate.requireAct(user, 'SEE_PENALISED');
     const limit = query.limit ?? PAGE.DEFAULT;
-    const before = query.before ? new Date(query.before) : null;
-    if (before && Number.isNaN(before.getTime())) {
-      throw new ProblemException({
-        type: ERR.VALIDATION_FAILED,
-        errors: [{ path: 'before', message: 'A date-time' }],
-      });
-    }
-    const bans = await this.staffDb.activeBans(query.userId ?? null, limit, before);
-    const restrictions = (
-      query.userId ? await this.restrictions.forUser(query.userId) : await this.restrictions.all()
-    ).slice(0, 500);
+    const before = query.before ? utility.decodeCursor(query.before) : null;
+    const restrictionBefore = query.restrictionBefore ? utility.decodeCursor(query.restrictionBefore) : null;
+    const userId = query.userId ? await this.staff.resolveTargetId(query.userId) : null;
+    const bans = await this.staffDb.activeBans(userId, limit, before);
+    const banRows = bans.slice(0, limit);
+    const restrictionPage = await this.staffDb.activeRestrictionPage(userId, limit, restrictionBefore);
+    const restrictions = restrictionPage.rows;
     const names = await this.staffDb.usernames(
       restrictions.filter((r) => r.targetType === 'USER').map((r) => r.targetValue),
     );
     return {
-      bans: bans.map((b) => ({
+      bans: banRows.map((b) => ({
         id: b.id,
         userId: b.user_id,
         username: b.username,
@@ -80,7 +77,13 @@ export class ChatStaffPenaltiesService {
         bannedAt: b.banned_at.toISOString(),
         expiresAt: b.expires_at?.toISOString() ?? null,
       })),
-      nextBefore: bans.length === limit ? (bans.at(-1)?.banned_at.toISOString() ?? null) : null,
+      nextBefore:
+        bans.length > limit && bans[limit - 1]
+          ? utility.encodeCursor({ createdAt: bans[limit - 1]!.banned_at_text, id: bans[limit - 1]!.id })
+          : null,
+      nextRestrictions: restrictionPage.nextAfter
+        ? utility.encodeCursor(restrictionPage.nextAfter)
+        : null,
       restrictions: restrictions.map((r) => ({
         id: r.id,
         targetType: r.targetType,

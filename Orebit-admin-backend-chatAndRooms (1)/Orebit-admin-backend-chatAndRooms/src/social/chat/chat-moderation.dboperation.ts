@@ -37,6 +37,7 @@ export class ChatModerationDbOperation {
         r.id,
         r.message_id               AS "messageId",
         r.dm_message_id            AS "dmMessageId",
+        chat.dm_message_is_archived(r.dm_message_created_at) AS "dmMessageArchived",
         dm.conversation_id         AS "conversationId",
         r.reported_user_id         AS "reportedUserId",
         r.reporter_id              AS "reporterId",
@@ -57,7 +58,8 @@ export class ChatModerationDbOperation {
       LEFT JOIN chat.room_messages m
              ON m.id = r.message_id AND m.created_at = r.message_created_at
       LEFT JOIN chat.rooms rm ON rm.id = m.room_id
-      LEFT JOIN chat.dm_messages dm ON dm.id = r.dm_message_id AND dm.created_at = r.dm_message_created_at
+      LEFT JOIN LATERAL chat.dm_message_for_report(r.dm_message_id, r.dm_message_created_at) dm
+             ON r.dm_message_id IS NOT NULL
       LEFT JOIN identity.users u1 ON u1.id = r.reporter_id
       LEFT JOIN identity.users u2 ON u2.id = r.reported_user_id
       WHERE
@@ -74,6 +76,7 @@ export class ChatModerationDbOperation {
       cursor: `${row.cursorAt}_${row.id}`,
       messageId: row.messageId ?? null,
       dmMessageId: row.dmMessageId ?? null,
+      dmMessageArchived: row.dmMessageArchived,
       conversationId: row.conversationId ?? null,
       messageContent: row.messageContent ?? null,
       roomId: row.roomId ?? null,
@@ -81,7 +84,7 @@ export class ChatModerationDbOperation {
       reporterId: row.reporterId,
       reporterUsername: row.reporterUsername ?? 'User',
       reportedUserId: row.reportedUserId,
-      reportedUsername: row.reportedUsername ?? 'User',
+      reportedUsername: row.reportedUsername ?? (row.reportedUserId ? 'User' : null),
       reason: row.reason,
       details: row.details ?? null,
       status: row.status as ChatReport['status'],
@@ -94,7 +97,8 @@ export class ChatModerationDbOperation {
 
   async getReportById(reportId: string): Promise<ReportRow | null> {
     const rows = await this.prisma.$queryRaw<ReportRow[]>`
-      SELECT id, message_id, dm_message_id, reporter_id, reported_user_id, reason, details, status::text AS status
+      SELECT id, message_id, dm_message_id, reporter_id, reported_user_id, reason, details, status::text AS status,
+             chat.dm_message_is_archived(dm_message_created_at) AS dm_archived
       FROM chat.chat_message_reports WHERE id = ${reportId}::uuid
     `;
     return rows[0] ?? null;
@@ -163,9 +167,8 @@ export class ChatModerationDbOperation {
     await this.prisma.$executeRaw`
       INSERT INTO chat.report_reasons (code, label, report_type, is_active, sort_order)
       VALUES (${data.code}, ${data.label}, ${data.reportType}, ${data.isActive}, ${data.sortOrder})
-      ON CONFLICT (code) DO UPDATE SET
+      ON CONFLICT (code, report_type) DO UPDATE SET
         label      = EXCLUDED.label,
-        report_type = EXCLUDED.report_type,
         is_active  = EXCLUDED.is_active,
         sort_order = EXCLUDED.sort_order
     `;
@@ -196,16 +199,15 @@ export class ChatModerationDbOperation {
         (b.is_active AND (b.expires_at IS NULL OR b.expires_at > now())) AS "isActive",
         b.lifted_by     AS "liftedBy",
         b.lifted_at     AS "liftedAt",
-        u.username,
+        CASE WHEN u.deleted_at IS NULL THEN u.username ELSE 'Deleted user' END AS username,
         r.name          AS "roomName"
       FROM chat.user_bans b
-      -- Only bans of live accounts.
-      INNER JOIN identity.users u ON u.id = b.user_id AND u.deleted_at IS NULL
+      LEFT JOIN identity.users u ON u.id = b.user_id
       LEFT JOIN chat.rooms r ON r.id = b.room_id
       WHERE
         (${!opts.before} OR b.banned_at < ${opts.before ?? null}::timestamptz)
         AND (${!at} OR (b.banned_at, b.id) < (${at}::timestamptz, ${id}::uuid))
-        AND (${!opts.userId} OR u.id::text = ${opts.userId ?? ''} OR u.username_lower = ${opts.userId?.toLowerCase() ?? ''})
+        AND (${!opts.userId} OR u.id::text = ${opts.userId ?? ''} OR (u.deleted_at IS NULL AND u.username_lower = ${opts.userId?.toLowerCase() ?? ''}))
         AND (${!opts.activeOnly} OR (b.is_active = true AND (b.expires_at IS NULL OR b.expires_at > now())))
       ORDER BY b.banned_at DESC, b.id DESC
       LIMIT ${opts.limit}

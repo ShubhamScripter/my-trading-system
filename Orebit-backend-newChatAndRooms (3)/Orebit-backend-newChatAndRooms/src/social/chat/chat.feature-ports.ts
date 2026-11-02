@@ -3,6 +3,10 @@ import { TwoFactorService } from '../../2fa/2fa.service';
 import { TestProviders } from './chat.test-providers';
 import { ChatRecordsDbOperation } from './persistence/chat.records.dboperation';
 import type { PriceAdd } from './chat.features.contract';
+import { ERR } from '../../contracts';
+import { ProblemException } from '../../http';
+import { CHAT_REFUSAL_REASONS } from './chat.constants';
+import { CHAT_PREMIUM_PORT, type PremiumPort } from './chat.ports';
 
 // Decoupled ports for external features: transfers, ad charges, 2FA/PIN verification, and coupons.
 export type VerificationMethod = 'TWO_FA' | 'PAYMENT_PIN';
@@ -54,6 +58,8 @@ export interface TransferPort {
     | { state: 'NOT_FOUND' }
     | { state: 'UNKNOWN' }
   >;
+  // Atomically prevent a NOT_FOUND reference from being accepted later.
+  void(reference: string): Promise<boolean>;
   // Checks whether the user is restricted from initiating or receiving transfers.
   isRestricted(userId: string): Promise<boolean>;
   // Reverts transfers with optional fee refund and shortfall handling.
@@ -112,7 +118,7 @@ export interface VerificationPort {
   // Returns verification success or null if method is unavailable.
   verify(userId: string, method: VerificationMethod, code: string): Promise<boolean | null>;
   // Checks if payment PIN is enabled.
-  hasPaymentPin?(userId: string): Promise<boolean>;
+  hasPaymentPin(userId: string): Promise<boolean>;
 }
 
 export interface FollowPort {
@@ -186,16 +192,10 @@ export interface LeaderboardPort {
   recordAdSpend(input: { userId: string; usd: string; adId: string }): Promise<void>;
 }
 
-export interface PremiumPort {
-  // Checks if user subscription includes ad suppression.
-  hasDisableAllAds(userId: string): Promise<boolean>;
-}
-
 export const CHAT_ADVERTISING_PORT = Symbol('CHAT_ADVERTISING_PORT');
 export const CHAT_CURRENCY_CATALOG_PORT = Symbol('CHAT_CURRENCY_CATALOG_PORT');
 export const CHAT_BENEFIT_DISCOUNT_PORT = Symbol('CHAT_BENEFIT_DISCOUNT_PORT');
 export const CHAT_LEADERBOARD_PORT = Symbol('CHAT_LEADERBOARD_PORT');
-export const CHAT_PREMIUM_PORT = Symbol('CHAT_PREMIUM_PORT');
 export const CHAT_COUPON_PORT = Symbol('CHAT_COUPON_PORT');
 export const CHAT_USER_HISTORY_PORT = Symbol('CHAT_USER_HISTORY_PORT');
 export const CHAT_TRANSFER_PORT = Symbol('CHAT_TRANSFER_PORT');
@@ -263,6 +263,7 @@ export class ChatFeaturePorts {
         return { status: 'COMPLETED', reference: `TEST-${reference}` };
       },
       status: async (reference) => ({ state: 'COMPLETED', reference: `TEST-${reference}` }),
+      void: async () => true,
       isRestricted: async () => false,
       currencies: async () => [
         { currency: 'USDT', min: null, max: null },
@@ -320,6 +321,7 @@ export class ChatFeaturePorts {
     if (this.premiumPort) return this.premiumPort;
     if (!(await this.standIns())) return null;
     return {
+      activePlanIds: async () => [],
       hasDisableAllAds: async () => false,
     };
   }
@@ -379,11 +381,15 @@ export class ChatFeaturePorts {
 
   // Checks whether the user has enabled payment PIN.
   async hasPaymentPin(userId: string): Promise<boolean> {
-    if (this.verificationPort?.hasPaymentPin) {
+    if (this.verificationPort) {
       return this.verificationPort.hasPaymentPin(userId);
     }
     if (await this.standIns()) return true;
-    return false;
+    throw new ProblemException({
+      type: ERR.FORBIDDEN,
+      detail: 'Payment PIN verification is unavailable',
+      extra: { reason: CHAT_REFUSAL_REASONS.FEATURE_UNAVAILABLE },
+    });
   }
 
   // Returns follow relationships between user and others.

@@ -5,8 +5,8 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../../db/client';
-import { claimBatch, releaseClaim } from '../platform/jobs';
-import { PLACES, cut } from '../platform/money';
+import { claimBatch } from '../platform/jobs';
+import { PLACES, cryptoStored, cut, usdStored } from '../platform/money';
 
 export type GiftStatus =
   | 'PENDING_VERIFICATION'
@@ -60,7 +60,7 @@ export class ChatGiftDbOperation {
       INSERT INTO chat.gift_transfers (id, sender_id, recipient_id, currency, amount, usd_value, fee_amount, room_id,
         conversation_id, verification, expires_at)
       VALUES (${data.id}::uuid, ${data.senderId}::uuid, ${data.recipientId}::uuid, ${data.currency},
-        ${data.amount}::numeric, ${data.usdValue}::numeric, ${data.feeAmount}::numeric, ${data.roomId}::uuid,
+        ${cryptoStored(data.amount)}::numeric, ${usdStored(data.usdValue)}::numeric, ${usdStored(data.feeAmount)}::numeric, ${data.roomId}::uuid,
         ${data.conversationId}::uuid, ${data.verification}, now() + make_interval(mins => ${data.minutes}::int))
       RETURNING expires_at
     `;
@@ -121,6 +121,22 @@ export class ChatGiftDbOperation {
     return changed > 0;
   }
 
+  async cancelExpiredVerification(limit: number): Promise<number> {
+    const rows = await this.prisma.$queryRaw<{ id: string }[]>`
+      WITH expired AS (
+        SELECT id FROM chat.gift_transfers
+        WHERE status = 'PENDING_VERIFICATION' AND expires_at <= now()
+        ORDER BY expires_at, id
+        LIMIT ${limit}
+        FOR UPDATE SKIP LOCKED
+      )
+      UPDATE chat.gift_transfers g SET status = 'CANCELLED'
+      FROM expired WHERE g.id = expired.id
+      RETURNING g.id
+    `;
+    return rows.length;
+  }
+
   /**
    * Settles a gift that is PROCESSING, once: the move is conditional on that state, so a second answer (the sweeper and
    * the request that was waiting for the transfer) changes nothing. False when it was already settled.
@@ -152,8 +168,11 @@ export class ChatGiftDbOperation {
   }
 
   /** A claimed gift goes back so the next pass asks again (the transfer module could not answer). */
-  release(id: string): Promise<void> {
-    return releaseClaim(this.prisma, 'gift_transfers', id);
+  async release(id: string): Promise<void> {
+    await this.prisma.$executeRaw`
+      UPDATE chat.gift_transfers SET claimed_at = NULL, processing_at = now()
+      WHERE id = ${id}::uuid
+    `;
   }
 
   /** The EXP and universal currency a completed gift earned the sender. */

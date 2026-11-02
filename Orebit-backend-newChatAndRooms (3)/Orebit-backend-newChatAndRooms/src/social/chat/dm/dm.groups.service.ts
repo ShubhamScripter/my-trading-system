@@ -5,16 +5,13 @@
 import { Injectable } from '@nestjs/common';
 import { ERR } from '../../../contracts';
 import { ProblemException } from '../../../http';
-import { CHAT_REFUSAL_REASONS, GROUP_NOTICE_WINDOW_SECONDS, PAGE, SERVER_EVENTS } from '../chat.constants';
+import { CHAT_REFUSAL_REASONS, PAGE, SERVER_EVENTS } from '../chat.constants';
 import { ChatAccessService } from '../chat.access.service';
 import { ChatDbOperation } from '../chat.dboperation';
-import { ChatFeaturePorts } from '../chat.feature-ports';
 import { GROUP_PERMISSIONS, type GroupPermission } from '../chat.features.contract';
 import { ChatModerationService, refuse } from '../chat.moderation.service';
 import type { ChatSettings } from '../chat.settings.contract';
 import { chatMediaBase, signMediaUrl } from '../chat.upload';
-import { ChatRelationsService } from '../services/chat.relations.service';
-import { ChatDelivery } from '../realtime/chat.delivery';
 import type { ChatUserContext } from '../chat.types';
 import * as utility from '../chat.utility';
 import { DmDbOperation, type MemberRow } from './dm.dboperation';
@@ -25,7 +22,6 @@ import {
   type GroupVisibility,
 } from './dm.groups.dboperation';
 import { DmGroupInvitesDbOperation } from './dm.group-invites.dboperation';
-import { DmGroupBansDbOperation } from './dm.group-bans.dboperation';
 import { GROUP_RANK, mayDo, outranks, roleFor, type GroupRole } from './dm.rules';
 import { requireLimit } from './dm.limits';
 import { DmService } from './dm.service';
@@ -37,12 +33,8 @@ export class DmGroupsService {
     private readonly messagesDb: DmMessagesDbOperation,
     private readonly groups: DmGroupsDbOperation,
     private readonly invitesDb: DmGroupInvitesDbOperation,
-    private readonly bansDb: DmGroupBansDbOperation,
     private readonly db: ChatDbOperation,
     private readonly access: ChatAccessService,
-    private readonly ports: ChatFeaturePorts,
-    private readonly relations: ChatRelationsService,
-    private readonly delivery: ChatDelivery,
     private readonly messages: DmService,
     private readonly moderation: ChatModerationService,
   ) {}
@@ -94,7 +86,8 @@ export class DmGroupsService {
 
   // A target who is an active member and below the actor. Accepts either a user ID or username handle.
   async target(groupId: string, me: MemberRow, userId: string): Promise<MemberRow> {
-    const id = (await this.db.resolveUserHandle(userId)) ?? userId;
+    const id = await this.resolveUser(groupId, userId);
+    if (!id) throw refuse(ERR.NOT_FOUND, CHAT_REFUSAL_REASONS.NOT_A_MEMBER, 'Not a member');
     const target = await this.dm.member(groupId, id);
     if (!target || target.state !== 'ACTIVE')
       throw refuse(ERR.NOT_FOUND, CHAT_REFUSAL_REASONS.NOT_A_MEMBER, 'Not a member');
@@ -108,7 +101,9 @@ export class DmGroupsService {
     return target;
   }
 
-  async resolveUser(handle: string): Promise<string | null> {
+  async resolveUser(groupId: string, handle: string): Promise<string | null> {
+    const memberId = await this.dm.memberIdByHandle(groupId, handle);
+    if (memberId) return memberId;
     return this.db.resolveUserHandle(handle);
   }
 
@@ -122,7 +117,9 @@ export class DmGroupsService {
   ): Promise<void> {
     // joins and leaves close together are one line whose counts grow, announced as an update.
     if (kind === 'joined' || kind === 'left') {
-      const { row, updated } = await this.messagesDb.addMembershipNotice(groupId, actorId, kind, GROUP_NOTICE_WINDOW_SECONDS);
+      const settings = await this.messages.settings();
+      const windowSeconds = requireLimit(settings.dm.membershipNoticeWindowSeconds, 'dm.membershipNoticeWindowSeconds');
+      const { row, updated } = await this.messagesDb.addMembershipNotice(groupId, actorId, kind, windowSeconds);
       if (updated) await this.messages.deliverUpdate(row);
       else await this.messages.deliver(row);
       return;
@@ -152,7 +149,7 @@ export class DmGroupsService {
 
   // only a public-chat ban stops creating groups and inviting (a DM ban does not).
   async assertNotChatBanned(user: ChatUserContext): Promise<void> {
-    await this.moderation.assertNotBanned(user.id, null, await this.dm.dbNow());
+    await this.moderation.assertNotBanned(user, null, await this.dm.dbNow());
   }
 
   // the name and description of a public group get public chat's auto-moderation.
@@ -257,10 +254,6 @@ export class DmGroupsService {
   ) {
     const settings = await this.open(true);
     const { group, me } = await this.context(user, groupId);
-    // The group counts as public after this change when it is public now and stays so, or becomes public.
-    if ((input.visibility ?? group.visibility) === 'PUBLIC' && (input.name !== undefined || input.description)) {
-      await this.moderateDetails(user, settings, input.name, input.description);
-    }
     if (input.name !== undefined) {
       this.assertMay(settings, group, me, 'RENAME');
       if (input.name.trim().length < 1 || input.name.trim().length > 64)
@@ -282,6 +275,13 @@ export class DmGroupsService {
     // "Group Admin can set if the members can text in the group or not."
     if (input.membersCanText !== undefined && GROUP_RANK[me.role] < GROUP_RANK.ADMIN) {
       throw this.denied('Only group admins decide whether members can text');
+    }
+    const nextName = input.name?.trim() ?? group.name;
+    const nextDescription = input.description === undefined ? group.description : input.description?.trim() || null;
+    const detailsChanged = input.name !== undefined || input.description !== undefined;
+    const becomesPublic = input.visibility === 'PUBLIC' && group.visibility !== 'PUBLIC';
+    if ((input.visibility ?? group.visibility) === 'PUBLIC' && (detailsChanged || becomesPublic)) {
+      await this.moderateDetails(user, settings, nextName, nextDescription);
     }
     await this.groups.updateGroup(groupId, {
       ...(input.name !== undefined ? { name: input.name.trim() } : {}),
@@ -342,13 +342,16 @@ export class DmGroupsService {
       }
       manageable = [...new Set(input.adminManageable)];
     }
-    await this.groups.updateGroup(groupId, { permissions: next, adminManageable: manageable });
+    await this.groups.updateGroup(groupId, { permissions: input.permissions ?? {}, adminManageable: manageable });
+    const updated = await this.groups.group(groupId);
+    const effectivePermissions = updated?.permissions ?? next;
+    const effectiveManageable = updated?.adminManageable ?? manageable;
     await this.messages.broadcast(groupId, SERVER_EVENTS.DM_CONVERSATION_UPDATED, {
       conversationId: groupId,
-      permissions: next,
-      adminManageable: manageable,
+      permissions: effectivePermissions,
+      adminManageable: effectiveManageable,
     });
-    return { groupId, permissions: next, adminManageable: manageable };
+    return { groupId, permissions: effectivePermissions, adminManageable: effectiveManageable };
   }
 
   // Finding and joining
@@ -437,9 +440,12 @@ export class DmGroupsService {
     const settings = await this.open(true);
     const group = await this.groups.group(groupId);
     if (!group || group.closedAt) throw new ProblemException({ type: ERR.NOT_FOUND, detail: 'Group not found' });
-    const existing = await this.dm.member(groupId, user.id);
-    if (existing?.state === 'ACTIVE') return { groupId, joined: false };
     const invite = await this.invitesDb.pendingInvite(groupId, user.id);
+    const existing = await this.dm.member(groupId, user.id);
+    if (existing?.state === 'ACTIVE') {
+      if (invite) await this.invitesDb.answerInvite(invite.id, 'ACCEPTED');
+      return { groupId, joined: false };
+    }
     if (group.visibility === 'PRIVATE' && !invite) {
       throw refuse(ERR.FORBIDDEN, CHAT_REFUSAL_REASONS.INVITE_ONLY, 'This group is invite only');
     }

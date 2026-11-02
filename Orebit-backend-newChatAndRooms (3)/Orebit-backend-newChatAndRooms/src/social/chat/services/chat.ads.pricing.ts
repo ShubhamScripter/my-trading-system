@@ -88,6 +88,12 @@ export function priceAd(ads: AdSettings, input: AdPriceInput): AdPrice {
   const base = D(ads.basePriceUsd);
   const lines: AdPriceLine[] = [{ label: 'Base price', usd: out(base) }];
   let perPost = base;
+  const rooms = [...input.rooms].sort((left, right) => {
+    const leftAdd = roomAdd(ads, left.type, left.planBound);
+    const rightAdd = roomAdd(ads, right.type, right.planBound);
+    const priority = Number(Boolean(leftAdd)) - Number(Boolean(rightAdd));
+    return priority || left.type.localeCompare(right.type) || left.id.localeCompare(right.id);
+  });
 
   if (input.is18Plus) {
     if (!ads.allow18Plus) {
@@ -105,7 +111,7 @@ export function priceAd(ads: AdSettings, input: AdPriceInput): AdPrice {
       const all = addCost(ads.allRooms, perPost);
       lines.push({ label: 'All rooms', usd: out(all) });
       perPost = perPost.add(all);
-      for (const room of input.rooms) {
+      for (const room of rooms) {
         const add = roomAdd(ads, room.type, room.planBound);
         if (!add) continue;
         const cost = addCost(add, perPost);
@@ -116,7 +122,7 @@ export function priceAd(ads: AdSettings, input: AdPriceInput): AdPrice {
         perPost = perPost.add(cost);
       }
     } else {
-      input.rooms.forEach((room, index) => {
+      rooms.forEach((room, index) => {
         const add = roomAdd(ads, room.type, room.planBound);
         // The first ordinary room is in the base price; premium and SO rooms always add their own cost.
         if (!add && index === 0) return;
@@ -148,9 +154,14 @@ export function priceAd(ads: AdSettings, input: AdPriceInput): AdPrice {
   }
 
   let total = perPost;
+  let repeatDiscountUsed = D(0);
   for (let k = 1; k <= input.repeatCount; k += 1) {
-    const off = repeatDiscount(ads, perPost);
+    const perRepeat = repeatDiscount(ads, perPost);
+    const cap = ads.repeat.maxDiscountUsd;
+    const remainingCap = cap === null ? null : D(cap).sub(repeatDiscountUsed);
+    const off = remainingCap === null ? perRepeat : minOf(perRepeat, remainingCap.gt(0) ? remainingCap : D(0));
     const cost = perPost.sub(off);
+    repeatDiscountUsed = repeatDiscountUsed.add(off);
     lines.push({ label: `Repeat ${k}`, usd: out(cost) });
     total = total.add(cost);
   }
@@ -186,7 +197,7 @@ export function priceAd(ads: AdSettings, input: AdPriceInput): AdPrice {
   };
 }
 
-// What an ad has not used yet, in whole units: posts not made plus pinned minutes not shown.
+// What an ad has not used yet, in whole seconds: posts not made plus pinned time not shown.
 export interface UnusedParts {
   readonly unused: number;
   readonly units: number;
@@ -198,13 +209,13 @@ export function unusedParts(input: {
   totalPosts: number;
   postedCount: number;
   pinnedMinutes: number;
-  pinnedMinutesUsed: number;
+  pinnedSecondsUsed: number;
 }): UnusedParts {
   return {
-    units: input.totalPosts + input.pinnedMinutes,
+    units: (input.totalPosts + input.pinnedMinutes) * 60,
     unused:
-      Math.max(0, input.totalPosts - input.postedCount) +
-      Math.max(0, input.pinnedMinutes - input.pinnedMinutesUsed),
+      Math.max(0, input.totalPosts - input.postedCount) * 60 +
+      Math.max(0, input.pinnedMinutes * 60 - input.pinnedSecondsUsed),
   };
 }
 
@@ -222,7 +233,7 @@ export function refundForCancel(
     readonly pinMinutes: number | null;
     readonly roomIds: readonly string[];
   },
-  pinnedMinutesUsed: number,
+  pinnedSecondsUsed: number,
   fee?: PriceAdd | null,
 ): string {
   // The pinned minutes were charged once per ad, so they are refunded once per ad, not per room.
@@ -233,11 +244,32 @@ export function refundForCancel(
       totalPosts: ad.repeatCount + 1,
       postedCount: ad.postedCount,
       pinnedMinutes,
-      pinnedMinutesUsed,
+      pinnedSecondsUsed,
     }),
   );
   if (!fee || !D(raw).gt(0)) return raw;
   const feeAmount = addCost(fee, D(raw));
   const finalRefund = D(raw).sub(feeAmount);
+  return usdStored(finalRefund.gt(0) ? finalRefund : D(0));
+}
+
+// Advertisers can only stop posts before the first post is sent. Pins are a separate service and always run to
+// their booked end, so their minutes never enter this refund. Admin/maintenance refunds keep refundForCancel above.
+export function refundForAdvertiserStop(
+  ad: { readonly priceUsd: string; readonly repeatCount: number; readonly breakdown?: unknown },
+  fee?: PriceAdd | null,
+): string {
+  const lines = Array.isArray(ad.breakdown) ? ad.breakdown : [];
+  const postPrice = lines.reduce((total, line) => {
+    if (!line || typeof line !== 'object') return total;
+    const item = line as { label?: unknown; usd?: unknown };
+    if (typeof item.label !== 'string' || typeof item.usd !== 'string') return total;
+    if (/^Pinned\b|^Ad skin$/.test(item.label)) return total;
+    return total.add(D(item.usd));
+  }, D(0));
+  // Old rows without an itemized breakdown are conservatively non-refundable rather than refunding pin/skin spend.
+  const raw = usdStored(postPrice);
+  if (!fee || !D(raw).gt(0)) return raw;
+  const finalRefund = D(raw).sub(addCost(fee, D(raw)));
   return usdStored(finalRefund.gt(0) ? finalRefund : D(0));
 }

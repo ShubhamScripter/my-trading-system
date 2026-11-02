@@ -50,12 +50,12 @@ export class ChatStaffDbOperation {
     const rows = await this.prisma.$queryRaw<StaffRoleRow[]>`
       SELECT
         sr.user_id        AS "userId",
-        u.username,
+        CASE WHEN u.deleted_at IS NULL THEN u.username ELSE 'Deleted user' END AS username,
         sr.role::text     AS role,
         sr.assigned_by    AS "assignedBy",
         sr.assigned_at    AS "assignedAt"
       FROM chat.staff_roles sr
-      INNER JOIN identity.users u ON u.id = sr.user_id AND u.deleted_at IS NULL
+      LEFT JOIN identity.users u ON u.id = sr.user_id
       WHERE sr.removed_at IS NULL
       ORDER BY sr.assigned_at DESC
     `;
@@ -93,8 +93,8 @@ export class ChatStaffDbOperation {
         `;
       } else {
         await tx.$executeRaw`
-          INSERT INTO chat.staff_roles (user_id, role, assigned_by, assigned_at)
-          VALUES (${data.userId}::uuid, ${data.role}::chat."StaffRole", ${data.adminId}::uuid, now())
+          INSERT INTO chat.staff_roles (id, user_id, role, assigned_by, assigned_at)
+          VALUES (${ChatUtility.generateUuid()}::uuid, ${data.userId}::uuid, ${data.role}::chat."StaffRole", ${data.adminId}::uuid, now())
           ON CONFLICT (user_id) WHERE removed_at IS NULL DO UPDATE SET role = EXCLUDED.role, assigned_by = EXCLUDED.assigned_by, assigned_at = now()
         `;
       }

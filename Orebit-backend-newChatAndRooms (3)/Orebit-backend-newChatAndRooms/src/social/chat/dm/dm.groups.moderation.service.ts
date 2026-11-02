@@ -109,11 +109,12 @@ export class DmGroupsModerationService {
     this.base.assertMay(settings, group, me, 'BAN');
     if (group.visibility !== 'PUBLIC')
       throw this.base.invalid('groupId', 'Bans are for public groups; remove the member instead');
-    const targetId = (await this.base.resolveUser(userId)) ?? userId;
+    const targetId = await this.base.resolveUser(groupId, userId);
+    if (!targetId) throw refuse(ERR.NOT_FOUND, CHAT_REFUSAL_REASONS.NOT_A_MEMBER, 'User not found');
     if (!banned) {
       const result = await this.bansDb.unban(groupId, targetId, me.role, user.id);
       if (result === 'not_banned') {
-        throw refuse(ERR.NOT_FOUND, CHAT_REFUSAL_REASONS.NOT_A_MEMBER, 'This person is not banned');
+        throw refuse(ERR.NOT_FOUND, CHAT_REFUSAL_REASONS.GROUP_BAN_NOT_FOUND, 'This person is not banned');
       }
       if (result === 'outranked') {
         throw refuse(
@@ -129,7 +130,14 @@ export class DmGroupsModerationService {
     else if (existing && !outranks(me.role, existing.role)) {
       throw refuse(ERR.FORBIDDEN, CHAT_REFUSAL_REASONS.TARGET_OUTRANKS_YOU, 'You cannot act on this member');
     }
-    await this.bansDb.banMember(groupId, targetId, { userId: user.id, role: me.role }, reason);
+    const applied = await this.bansDb.banMember(groupId, targetId, { userId: user.id, role: me.role }, reason);
+    if (!applied) {
+      throw refuse(
+        ERR.FORBIDDEN,
+        CHAT_REFUSAL_REASONS.TARGET_OUTRANKS_YOU,
+        'This ban was set by a higher role',
+      );
+    }
     await this.base.event(groupId, user.id, 'banned', targetId);
     this.delivery.toUser(targetId, SERVER_EVENTS.DM_CONVERSATION_UPDATED, {
       conversationId: groupId,
@@ -204,7 +212,8 @@ export class DmGroupsModerationService {
     const settings = await this.base.open(true);
     const { me } = await this.base.context(user, groupId);
     if (me.role !== 'OWNER') throw this.base.denied('Only the owner transfers ownership');
-    const targetId = (await this.base.resolveUser(userId)) ?? userId;
+    const targetId = await this.base.resolveUser(groupId, userId);
+    if (!targetId) throw refuse(ERR.NOT_FOUND, CHAT_REFUSAL_REASONS.NOT_A_MEMBER, 'Not a member');
     const result = await this.groups.transferOwnership(groupId, user.id, targetId, {
       count: settings.groups.transfersPerWindow,
       windowHours: settings.groups.transferWindowHours,

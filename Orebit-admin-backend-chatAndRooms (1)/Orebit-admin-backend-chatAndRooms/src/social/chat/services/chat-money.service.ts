@@ -6,6 +6,7 @@ import { ProblemException, parseDto } from '../../../http';
 import { ChatModerationDbOperation } from '../chat-moderation.dboperation';
 import { ChatRoomDbOperation } from '../chat-room.dboperation';
 import type { ChatSettings } from '../chat.settings.contract';
+import { ChatSettingsDocumentSchema, effectiveSettings } from '../chat.settings.contract';
 import { ChatSettingsAdminService } from './chat.settings.service';
 import { ChatMoneyDbOperation } from '../persistence/chat-money.dboperation';
 
@@ -84,6 +85,9 @@ export const CommandLogQuerySchema = z
   .object({ userId: z.string().trim().min(1).max(64).optional(), limit: LIMIT })
   .strict();
 
+export const RevertJobsQuerySchema = z.object({ limit: LIMIT }).strict();
+const RevertJobIdSchema = z.object({ jobId: UUID }).strict();
+
 /** "for a Specific Time Frame [for specific users / group of users] [for a specific amount range]". */
 const RevertBase = {
   from: z.string().datetime({ offset: true }),
@@ -99,12 +103,15 @@ const RevertBase = {
       value: z.string().trim().regex(/^\d{0,6}$/, 'A level').default(''),
     })
     .strict()
+    .refine((group) => group.targetType !== 'LEVEL' || group.value.length > 0, {
+      message: 'A level threshold is required for LEVEL groups',
+      path: ['value'],
+    })
     .optional(),
   /** true: only count and list what would be reverted. */
   dryRun: z.boolean().default(false),
   // Required written reason on every revert (minimum 3 characters).
-  reason: z.string().trim().min(3).max(500).optional(),
-  note: z.string().trim().max(500).optional(),
+  reason: z.string().trim().min(3).max(500),
   // Explicit revert all flag required when no specific filter is specified.
   revertAll: z.boolean().default(false),
 };
@@ -121,10 +128,6 @@ export const RevertAdsSchema = z
   .refine((r) => Date.parse(r.from) < Date.parse(r.to), {
     message: 'from must be before to',
     path: ['to'],
-  })
-  .refine((r) => Boolean((r.reason && r.reason.length >= 3) || (r.note && r.note.length >= 3)), {
-    message: 'A written reason of at least 3 characters is required for every revert',
-    path: ['reason'],
   })
   .refine(
     (r) =>
@@ -158,10 +161,6 @@ export const RevertGiftsSchema = z
   .refine((r) => Date.parse(r.from) < Date.parse(r.to), {
     message: 'from must be before to',
     path: ['to'],
-  })
-  .refine((r) => Boolean((r.reason && r.reason.length >= 3) || (r.note && r.note.length >= 3)), {
-    message: 'A written reason of at least 3 characters is required for every revert',
-    path: ['reason'],
   })
   .refine(
     (r) =>
@@ -304,6 +303,7 @@ export class ChatMoneyService {
    */
   async revertAds(body: unknown, adminId: string) {
     const dto = parseDto(RevertAdsSchema, body);
+    if (!dto.dryRun) await this.assertRevertsConfigured(false);
     const userIds = await this.userIds(dto.userIds);
     const ads = await this.money.adsForRevert({
       ...this.window(dto),
@@ -318,7 +318,7 @@ export class ChatMoneyService {
         ...this.window(dto),
         userIds,
         group: dto.group,
-        note: dto.note ?? null,
+        note: dto.reason,
         adIds: dto.adIds,
         pinnedOnly: dto.pinnedOnly,
       });
@@ -326,14 +326,14 @@ export class ChatMoneyService {
         actorId: adminId,
         action: 'REVERT_ADS',
         newValue: { ...dto, jobId, candidates: ads.length },
-        note: dto.note ?? null,
+        note: dto.reason,
       });
       return { dryRun: false, queued: true, jobId, candidates: ads.length };
     }
     if (dto.dryRun) return { dryRun: true, count: ads.length, adIds: ads.map((a) => a.id) };
     let refunded = 0;
     for (const ad of ads.filter((a) => a.status === 'ACTIVE' || a.status === 'PAUSED')) {
-      if ((await this.money.cancelAd(ad.id, adminId, dto.note ?? 'Reverted by admin', 'UNUSED')).cancelled) {
+      if ((await this.money.cancelAd(ad.id, adminId, dto.reason, 'UNUSED')).cancelled) {
         refunded += 1;
         await this.moderation.notify({ kind: 'ad', adId: ad.id });
       }
@@ -343,7 +343,7 @@ export class ChatMoneyService {
       actorId: adminId,
       action: 'REVERT_ADS',
       newValue: { ...dto, count: ads.length, stopped: refunded, rewardsReverted: rewards },
-      note: dto.note ?? null,
+      note: dto.reason,
     });
     // The chat server pays the refunds and takes back the rewards on its next tick.
     return { dryRun: false, count: ads.length, stopped: refunded, rewardsReverted: rewards };
@@ -351,14 +351,15 @@ export class ChatMoneyService {
 
   /**
    * "Revert ALL Transfers for a Specific Time Frame [for specific users] [Currencies] [amount range]", with "Refund
-   * Fees: YES / NO". Gifts are marked REVERT_PENDING; the chat server asks the transfer module to move each back —
-   * "If the user doesn't have enough balance, revert will not be conducted" (REVERT_FAILED with the reason) — and
-   * takes back the EXP and currency the gift earned.
+   * Fees: YES / NO". Gifts are marked REVERT_PENDING; the chat server asks the transfer module to move each back.
+   * The selected shortfall policy controls whether the recipient may go negative; the earned EXP and currency are
+   * handled by the same revert job.
    */
   async revertGifts(body: unknown, adminId: string) {
     const dto = parseDto(RevertGiftsSchema, body);
+    if (!dto.dryRun) await this.assertRevertsConfigured(true);
     const userIds = await this.userIds(dto.userIds);
-    const effectiveNote = dto.reason ?? dto.note ?? 'Reverted by admin';
+    const effectiveNote = dto.reason;
     if (dto.group) {
       // "group of users": the chat server keeps only the transfers whose sender or recipient is in the group.
       const candidates = await this.money.revertGifts({
@@ -409,6 +410,18 @@ export class ChatMoneyService {
     return { dryRun: dto.dryRun, count: result.count, usdValue: result.usd };
   }
 
+  async revertJobs(query: unknown) {
+    const q = parseDto(RevertJobsQuerySchema, query);
+    return { jobs: await this.money.revertJobs(q.limit) };
+  }
+
+  async revertJob(jobId: unknown) {
+    const parsed = parseDto(RevertJobIdSchema, { jobId });
+    const job = await this.money.revertJob(parsed.jobId);
+    if (!job) throw new ProblemException({ type: ERR.NOT_FOUND, detail: 'Money revert job not found' });
+    return job;
+  }
+
   // Gifts and the command log
   async gifts(query: unknown) {
     const q = parseDto(GiftsQuerySchema, query);
@@ -426,5 +439,27 @@ export class ChatMoneyService {
     return {
       commands: await this.money.commandLog(q.userId ? await this.userId(q.userId) : null, q.limit),
     };
+  }
+
+  private async assertRevertsConfigured(gifts: boolean): Promise<void> {
+    const { document } = await this.settings.getDocument();
+    const parsed = ChatSettingsDocumentSchema.safeParse(document ?? {});
+    if (!parsed.success) {
+      throw new ProblemException({ type: ERR.FORBIDDEN, detail: 'Chat money settings are invalid; reverts are disabled' });
+    }
+    const config = effectiveSettings(parsed.data, null);
+    const missing = [
+      ['ads.pendingPaymentMinutes', config.ads.pendingPaymentMinutes],
+      ['ads.jobStaleMinutes', config.ads.jobStaleMinutes],
+      ['ads.jobPageSize', config.ads.jobPageSize],
+      ['ads.jobBudgetSeconds', config.ads.jobBudgetSeconds],
+      ...(gifts ? [['gifts.processingStaleMinutes', config.gifts.processingStaleMinutes] as const] : []),
+    ].filter(([, value]) => value === null).map(([name]) => name);
+    if (missing.length > 0) {
+      throw new ProblemException({
+        type: ERR.FORBIDDEN,
+        detail: `Configure these chat money settings before running a revert: ${missing.join(', ')}`,
+      });
+    }
   }
 }

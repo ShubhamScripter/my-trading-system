@@ -109,8 +109,8 @@ export class RainAdminRoutes {
   // Trigger, jobs, and series
   @Post('trigger')
   @HttpCode(200)
-  async trigger(@Req() req: FastifyRequest): Promise<SuccessEnvelope<unknown>> {
-    return ok(await this.rain.trigger(this.admin(req)));
+  async trigger(@Body() body: unknown, @Req() req: FastifyRequest): Promise<SuccessEnvelope<unknown>> {
+    return ok(await this.rain.trigger(body, this.admin(req)));
   }
 
   @Get('jobs')

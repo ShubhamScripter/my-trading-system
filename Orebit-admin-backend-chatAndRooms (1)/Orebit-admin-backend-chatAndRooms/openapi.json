@@ -6095,6 +6095,43 @@
         }
       }
     },
+    "/social/chat/money/reverts": {
+      "get": {
+        "tags": ["chat"],
+        "summary": "List chat money revert jobs",
+        "description": "Module 5: review progress and results for queued ad and gift reverts. Signed-in admin.",
+        "security": [{"bearerAuth": []}, {"cookieAuth": []}],
+        "parameters": [{
+          "name": "limit",
+          "in": "query",
+          "required": false,
+          "schema": {"type": "integer", "minimum": 1, "maximum": 200, "default": 50}
+        }],
+        "responses": {
+          "200": {"description": "Done."},
+          "401": {"description": "Not signed in."}
+        }
+      }
+    },
+    "/social/chat/money/reverts/{jobId}": {
+      "get": {
+        "tags": ["chat"],
+        "summary": "Read chat money revert job",
+        "description": "Module 5: inspect one queued or completed ad/gift revert, including its progress. Signed-in admin.",
+        "security": [{"bearerAuth": []}, {"cookieAuth": []}],
+        "parameters": [{
+          "name": "jobId",
+          "in": "path",
+          "required": true,
+          "schema": {"type": "string", "format": "uuid"}
+        }],
+        "responses": {
+          "200": {"description": "Done."},
+          "401": {"description": "Not signed in."},
+          "404": {"description": "Money revert job not found."}
+        }
+      }
+    },
     "/social/chat/commands": {
       "get": {
         "tags": [

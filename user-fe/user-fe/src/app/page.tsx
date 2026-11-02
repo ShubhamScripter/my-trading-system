@@ -92,6 +92,22 @@ import {
   type SendMessageAckData,
 } from "@/lib/socket";
 
+function newClientMessageId(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  const bytes = new Uint8Array(16);
+  if (typeof crypto !== "undefined" && typeof crypto.getRandomValues === "function") {
+    crypto.getRandomValues(bytes);
+  } else {
+    for (let index = 0; index < bytes.length; index += 1) bytes[index] = Math.floor(Math.random() * 256);
+  }
+  bytes[6] = (bytes[6] & 0x0f) | 0x40;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex = Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
 const getRoomIcon = (room?: RoomItem | null, size = 18) => {
   if (!room) return <MessageSquare size={size} className="text-slate-400" />;
   switch (room.type) {
@@ -204,6 +220,7 @@ export default function Home() {
 
   // Inputs
   const [messageText, setMessageText] = useState("");
+  const retryMessageIdsRef = useRef(new Map<string, string>());
   const [signupForm, setSignupForm] = useState({
     email: "",
     username: "",
@@ -1003,11 +1020,14 @@ export default function Home() {
       return;
     }
 
+    const retryKey = `${joinedRoomId ?? ""}\u0000${messageText}`;
+    const clientMessageId = retryMessageIdsRef.current.get(retryKey) ?? newClientMessageId();
+    retryMessageIdsRef.current.delete(retryKey);
     const payload = {
       roomId: joinedRoomId,
       content: messageText,
       ...(activeCosmeticId ? { skinId: activeCosmeticId } : {}),
-      clientMessageId: typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : undefined,
+      clientMessageId,
     };
 
     socket.emit(
@@ -1015,16 +1035,30 @@ export default function Home() {
       payload,
       (ack: AckResponse<SendMessageAckData>) => {
         if (ack.ok) {
+          retryMessageIdsRef.current.delete(retryKey);
           if (ack.data?.command) handleCommandResult(ack.data.command, ack.data.result);
           return;
         }
         if (ack.error.type === "rate_limited") {
+          retryMessageIdsRef.current.set(retryKey, clientMessageId);
+          while (retryMessageIdsRef.current.size > 20) {
+            retryMessageIdsRef.current.delete(retryMessageIdsRef.current.keys().next().value!);
+          }
+          setMessageText((current) => (current.trim() ? current : messageText));
           setRateLimitCooldown(
             (ack.error.extra?.remainingSeconds as number | undefined) ??
               ack.error.retryAfterSeconds ??
               10,
           );
+        } else if (ack.error.type === "server_busy") {
+          retryMessageIdsRef.current.set(retryKey, clientMessageId);
+          while (retryMessageIdsRef.current.size > 20) {
+            retryMessageIdsRef.current.delete(retryMessageIdsRef.current.keys().next().value!);
+          }
+          setMessageText((current) => (current.trim() ? current : messageText));
+          setRateLimitCooldown(ack.error.retryAfterSeconds ?? 1);
         } else {
+          retryMessageIdsRef.current.delete(retryKey);
           showNotice((ack.error as any).errors?.[0]?.message || ack.error.detail || ack.error.title || "Your message could not be sent.");
         }
       },

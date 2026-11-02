@@ -30,7 +30,6 @@ export const LIMITS = {
   URL_CHARS: 2048,
   CAPTION_CHARS: 500,
   NOTE_CHARS: 500,
-  MAX_OPEN_TICKETS_PER_USER: 3,
   // At most this many users are tagged per message; further @names stay plain text.
   TAGS_PER_MESSAGE: 10,
   // Socket.IO `maxHttpBufferSize`: a packet over this closes the connection.
@@ -61,6 +60,8 @@ export const TIMERS = {
   MEMBER_SEARCH_MS: 1_000,
   // Handshakes being authenticated at once; more are refused with server_busy.
   MAX_PENDING_HANDSHAKES: 200,
+  // Bound queued message writes so overload is refused before it becomes a long, silent ack delay.
+  MAX_PENDING_SENDS: 200,
   // Send-retry ids are kept this long.
   CLIENT_ID_RETENTION_HOURS: 24,
   // Messages of a reconnect catch-up start this long before the last message the client had.
@@ -71,7 +72,6 @@ export const TIMERS = {
 export const PARTITION_MONTHS_AHEAD = 3;
 
 // Joins and leaves of a group within this many seconds are one notice line, not one line each.
-export const GROUP_NOTICE_WINDOW_SECONDS = 60;
 
 // DM months older than this are detached into the chat_archive schema, never deleted.
 export const DM_ARCHIVE_AFTER_MONTHS = 12;
@@ -155,6 +155,7 @@ export const CHAT_REFUSAL_REASONS = {
   // Nicknames are for friends only.
   FRIENDS_ONLY: 'friends_only',
   NOT_A_MEMBER: 'not_a_member',
+  GROUP_BAN_NOT_FOUND: 'group_ban_not_found',
   // A limit from the DM settings: pinned people or messages, groups created or joined, admins, members.
   LIMIT_REACHED: 'limit_reached',
   // The group's "members can text" is off, or this member is timed out.

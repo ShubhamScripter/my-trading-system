@@ -135,7 +135,6 @@ export class DmPageQueryDto extends Page {}
 export class DmSearchQueryDto extends Page {
   @Transform(trim)
   @IsString()
-  @Length(2, 100)
   q!: string;
 
   @IsOptional()
@@ -361,7 +360,9 @@ export class GroupBanDto {
 }
 
 export class GroupTransferDto {
-  @IsUuidLike()
+  @Transform(trim)
+  @IsString()
+  @Length(1, 64)
   userId!: string;
 }
 

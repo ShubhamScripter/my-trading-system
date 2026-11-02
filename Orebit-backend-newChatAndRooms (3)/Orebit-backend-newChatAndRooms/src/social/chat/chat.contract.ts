@@ -334,7 +334,9 @@ export const RoomPatchSchema = z
       })
       .strict()
       .optional(),
-    config: RoomConfigSchema.partial().optional(),
+    config: RoomConfigSchema.partial()
+      .extend({ contentControls: ContentControlsSchema.partial().optional() })
+      .optional(),
     access: RoomAccessSchema.partial().optional(),
   })
   .strict();

@@ -147,9 +147,18 @@ describe.skipIf(!url)('chat on a real database', () => {
       reason: 'OTHER',
       details: null,
     });
+    const systemAdMessageReport = await records.insertReport({
+      messageId: row.id,
+      messageCreatedAt: row.createdAtText,
+      reporterId: userB,
+      reportedUserId: null,
+      reason: 'SPAM',
+      details: 'Admin-created ad',
+    });
     expect(first).not.toBeNull();
     expect(again).toBeNull();
     expect(aboutUser).not.toBeNull();
+    expect(systemAdMessageReport).not.toBeNull();
   });
 
   it('a send retried with the same client id is stored once', async () => {

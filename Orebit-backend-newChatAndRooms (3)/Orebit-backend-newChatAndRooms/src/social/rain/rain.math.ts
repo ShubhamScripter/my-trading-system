@@ -38,7 +38,11 @@ export function formatMinor(minor: bigint): string {
 
 /** "Fess on Rains done by users (%)" in basis points: 2.5% → 250. */
 export function percentToBps(percent: number): number {
-  return Math.round(percent * 100);
+  const minor = parseMinor(String(percent));
+  if (minor === null || minor % 1_000_000n !== 0n) throw new Error('fee percent must have at most two decimal places');
+  const bps = Number(minor / 1_000_000n);
+  if (bps < 0 || bps > 10_000) throw new Error('fee percent out of range');
+  return bps;
 }
 
 /** Fee rounds down. The remainder stays distributable, so fee + distributable === pot. */
@@ -228,37 +232,6 @@ export interface LedgerLeg {
   readonly key: string;
 }
 
-/** Debit the payer the whole pot, credit the fee account and each recipient. Deltas sum to zero. */
-export function buildLegs(input: {
-  rainId: string;
-  payerId: string;
-  feeAccountId: string;
-  pot: bigint;
-  fee: bigint;
-  shares: readonly RainShare[];
-}): LedgerLeg[] {
-  const legs: LedgerLeg[] = [
-    { userId: input.payerId, delta: -input.pot, key: `${input.rainId}:debit:${input.payerId}` },
-  ];
-  if (input.fee > 0n) {
-    legs.push({
-      userId: input.feeAccountId,
-      delta: input.fee,
-      key: `${input.rainId}:fee`,
-    });
-  }
-  for (const share of input.shares) {
-    legs.push({
-      userId: share.userId,
-      delta: share.amount,
-      key: `${input.rainId}:credit:${share.userId}`,
-    });
-  }
-  const sum = legs.reduce((total, leg) => total + leg.delta, 0n);
-  if (sum !== 0n) throw new Error('rain legs do not balance');
-  return legs;
-}
-
 /**
  * "Revert Specific Rains", for the shares being taken back now (all of a rain, or only some recipients'):
  *  - payerRefund REFUND: what is taken back goes to the person who rained. The fee is never
@@ -280,6 +253,14 @@ export function reversalPlan(input: {
   payerRefund: 'REFUND' | 'NONE';
   shortfall: 'ZERO' | 'NEGATIVE';
 }): { legs: LedgerLeg[]; reclaimed: bigint; missing: bigint; creditedTo: string } {
+  if (input.kind === 'USER' && input.payerRefund === 'NONE') {
+    return {
+      legs: [],
+      reclaimed: 0n,
+      missing: input.shares.reduce((sum, share) => sum + share.amount, 0n),
+      creditedTo: 'none',
+    };
+  }
   const creditedTo =
     input.kind === 'SYSTEM' || input.payerRefund === 'REFUND' ? input.payerId : input.platformAccountId;
   const debits: LedgerLeg[] = [];

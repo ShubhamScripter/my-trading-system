@@ -39,6 +39,9 @@ interface TicketSql {
 const TIME_TEXT = Prisma.raw(
   `to_char(t.last_message_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`,
 );
+const MESSAGE_TIME_TEXT = Prisma.raw(
+  `to_char(m.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`,
+);
 
 const TICKET_SELECT = Prisma.sql`
   SELECT t.id, t.user_id, u.username, t.subject, t.status, t.last_message_at,
@@ -91,7 +94,14 @@ export class ChatSupportDbOperation {
     return rows[0] ? toSummary(rows[0]) : null;
   }
 
-  async messages(ticketId: string, limit = 50): Promise<TicketMessage[]> {
+  async messages(
+    ticketId: string,
+    limit = 50,
+    after: { at: string; id: string } | null = null,
+  ): Promise<{ rows: TicketMessage[]; cursors: string[] }> {
+    const cursor = after
+      ? Prisma.sql`AND (m.created_at, m.id) > (${after.at}::timestamptz, ${after.id}::uuid)`
+      : Prisma.empty;
     const rows = await this.prisma.$queryRaw<
       {
         id: string;
@@ -99,21 +109,26 @@ export class ChatSupportDbOperation {
         username: string | null;
         content: string;
         created_at: Date;
+        created_at_text: string;
       }[]
     >`
-      SELECT m.id, m.sender_admin_id, u.username, m.content, m.created_at
+      SELECT m.id, m.sender_admin_id, u.username, m.content, m.created_at,
+             ${MESSAGE_TIME_TEXT} AS created_at_text
       FROM chat.support_messages m
       LEFT JOIN identity.users u ON u.id = m.sender_user_id
-      WHERE m.ticket_id = ${ticketId}::uuid
+      WHERE m.ticket_id = ${ticketId}::uuid ${cursor}
       ORDER BY m.created_at, m.id
-      LIMIT ${limit}`;
-    return rows.map((row) => ({
-      id: row.id,
-      fromSupport: row.sender_admin_id !== null,
-      senderUsername: row.username,
-      content: row.content,
-      createdAt: row.created_at.toISOString(),
-    }));
+      LIMIT ${limit + 1}`;
+    return {
+      rows: rows.map((row) => ({
+        id: row.id,
+        fromSupport: row.sender_admin_id !== null,
+        senderUsername: row.username,
+        content: row.content,
+        createdAt: row.created_at.toISOString(),
+      })),
+      cursors: rows.map((row) => `${row.created_at_text}|${row.id}`),
+    };
   }
 
   /** An admin's answer; the first one moves a PENDING ticket to OPEN. A closed ticket takes none. */

@@ -65,7 +65,11 @@ export class ChatRelationsService {
 
   /** Called when the user's last socket closes. */
   unload(userId: string): void {
-    for (const author of this.hidden.get(userId) ?? []) this.hiders.get(author)?.delete(userId);
+    for (const author of this.hidden.get(userId) ?? []) {
+      const viewers = this.hiders.get(author);
+      viewers?.delete(userId);
+      if (viewers?.size === 0) this.hiders.delete(author);
+    }
     this.hidden.delete(userId);
   }
 

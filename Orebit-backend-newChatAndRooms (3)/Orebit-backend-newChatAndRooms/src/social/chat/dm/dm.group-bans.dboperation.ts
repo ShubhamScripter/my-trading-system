@@ -1,8 +1,9 @@
-// Database access for bans from public groups (Module 9, ): the ban and the member's state change together, a
+// Database access for bans from public groups (Module 9): the ban and the member's state change together, a
 // ban is lifted only by a role not below the one that set it, and the list of banned members is keyset-paged.
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../../db/client';
+import { uuidv7 } from '../../../utils/public.utils';
 import { TIME_TEXT } from '../persistence/chat.sql';
 import type { BanRow, UnbanResult } from './dm.groups.dboperation';
 import { dmMemberCache } from './dm.member-cache';
@@ -37,20 +38,28 @@ export class DmGroupBansDbOperation {
     userId: string,
     by: { userId: string; role: GroupRole },
     reason: string | null,
-  ): Promise<void> {
-    await this.prisma.$transaction(async (tx) => {
-      await tx.$executeRaw`
-        INSERT INTO chat.dm_group_bans (conversation_id, user_id, banned_by, banned_by_role, reason)
-        VALUES (${conversationId}::uuid, ${userId}::uuid, ${by.userId}::uuid, ${by.role}, ${reason})
+  ): Promise<boolean> {
+    const changed = await this.prisma.$transaction(async (tx) => {
+      const rows = await tx.$queryRaw<{ user_id: string }[]>`
+        INSERT INTO chat.dm_group_bans (id, conversation_id, user_id, banned_by, banned_by_role, reason)
+        VALUES (${uuidv7()}::uuid, ${conversationId}::uuid, ${userId}::uuid, ${by.userId}::uuid, ${by.role}, ${reason})
         ON CONFLICT (conversation_id, user_id) WHERE removed_at IS NULL DO UPDATE SET banned_by = EXCLUDED.banned_by,
           banned_by_role = EXCLUDED.banned_by_role, reason = EXCLUDED.reason, created_at = now()
+        WHERE CASE EXCLUDED.banned_by_role::text WHEN 'OWNER' THEN 4 WHEN 'ADMIN' THEN 3
+          WHEN 'SUB_ADMIN' THEN 2 ELSE 1 END >=
+          CASE chat.dm_group_bans.banned_by_role::text WHEN 'OWNER' THEN 4 WHEN 'ADMIN' THEN 3
+          WHEN 'SUB_ADMIN' THEN 2 ELSE 1 END
+        RETURNING user_id
       `;
+      if (rows.length === 0) return false;
       await tx.$executeRaw`
         UPDATE chat.dm_members SET state = 'BANNED', role = 'MEMBER', pinned_at = NULL, updated_at = now()
         WHERE conversation_id = ${conversationId}::uuid AND user_id = ${userId}::uuid
       `;
+      return true;
     });
-    dmMemberCache.invalidate(conversationId);
+    if (changed) dmMemberCache.invalidate(conversationId);
+    return changed;
   }
 
   // Lifts a ban only for someone who outranks the role that set it; false-y outcomes say why.

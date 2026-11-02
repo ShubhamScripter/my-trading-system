@@ -6,8 +6,9 @@ export interface ReportRow {
   id: string;
   message_id: string | null;
   dm_message_id: string | null;
+  dm_archived: boolean;
   reporter_id: string;
-  reported_user_id: string;
+  reported_user_id: string | null;
   reason: string;
   details: string | null;
   status: string;
@@ -42,8 +43,9 @@ export interface ReportListRow {
   cursorAt: string;
   messageId: string | null;
   dmMessageId: string | null;
+  dmMessageArchived: boolean;
   conversationId: string | null;
-  reportedUserId: string;
+  reportedUserId: string | null;
   reporterId: string;
   reason: string;
   details: string | null;

@@ -12,22 +12,16 @@ import { parseMinor } from './rain.math';
  *  - Price: the USD price of one unit of a currency. The RainPool sheets set amounts in USD ("Rain Amount: Minimum
  *    x USD", "amount above x USD", "X for every y$"). Not connected = only the development rates in
  *    `rain.dev_prices` while RAIN_DEV_WALLET is on; otherwise every USD rule refuses (nothing is guessed).
- *  - Network: whether an IP is a VPN or a proxy ("New IP and Different country (VPN / Proxy)"). Not connected = only
- *    the edge's Tor flag counts.
  */
 
 export interface RainPricePort {
   /** The USD price of one whole unit, as a decimal string, or null when unknown. */
   usdPrice(currency: string): Promise<string | null>;
-}
-
-export interface RainNetworkPort {
-  /** True for a VPN or proxy address, false for a normal one, null when the provider cannot tell. */
-  isVpnOrProxy(ip: string): Promise<boolean | null>;
+  /** Currencies supported by the connected wallet, or null when that list is unavailable. */
+  currencies?(): Promise<readonly string[] | null>;
 }
 
 export const RAIN_PRICE_PORT = Symbol('RAIN_PRICE_PORT');
-export const RAIN_NETWORK_PORT = Symbol('RAIN_NETWORK_PORT');
 
 @Injectable()
 export class RainPorts {
@@ -36,7 +30,6 @@ export class RainPorts {
   constructor(
     private readonly prisma: PrismaService,
     @Optional() @Inject(RAIN_PRICE_PORT) private readonly price?: RainPricePort,
-    @Optional() @Inject(RAIN_NETWORK_PORT) private readonly network?: RainNetworkPort,
   ) {}
 
   /** Whether USD rules can be answered at all: a bound price provider, or the development rates. */
@@ -64,17 +57,23 @@ export class RainPorts {
     }
   }
 
-  /** The edge's flag, or a connected provider's answer. A provider failure counts as not flagged. */
-  async isVpnOrProxy(ip: string, edgeFlag: boolean): Promise<boolean> {
-    if (edgeFlag) return true;
-    if (!this.network) return false;
+  async currencyCodes(): Promise<string[] | null> {
     try {
-      return (await this.network.isVpnOrProxy(ip)) === true;
+      if (this.price?.currencies) {
+        const rows = await this.price.currencies();
+        return rows ? [...new Set(rows.map((code) => code.trim().toUpperCase()).filter(Boolean))].sort() : null;
+      }
+      if (!rainDevWallet()) return null;
+      const rows = await this.prisma.$queryRaw<{ currency: string }[]>`
+        SELECT currency FROM rain.dev_prices ORDER BY currency
+      `;
+      return rows.map((row) => row.currency);
     } catch (err: unknown) {
-      this.logger.warn({ err }, 'VPN / proxy check failed; the edge flag alone decides');
-      return false;
+      this.logger.warn({ err }, 'could not read supported currencies');
+      return null;
     }
   }
+
 }
 
 /** NUMERIC text like "65000.12000000" → at most 8 decimals, no trailing zeros. */

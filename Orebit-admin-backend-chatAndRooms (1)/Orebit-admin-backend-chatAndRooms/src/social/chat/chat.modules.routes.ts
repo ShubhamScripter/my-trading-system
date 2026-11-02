@@ -4,7 +4,7 @@
  * global AuthGuard); every change is recorded in the moderation log. Chat-wide settings for these modules (staff
  * permissions, commands, gifts, ads, DM, groups, privacy) are saved through the existing `settings` route.
  */
-import { Body, Controller, Get, Injectable, Post, Query, Req } from '@nestjs/common';
+import { Body, Controller, Get, Injectable, Param, Post, Query, Req } from '@nestjs/common';
 import type { FastifyRequest } from 'fastify';
 import { requirePrincipal } from '../../../auth/security/guards';
 import { ok, type SuccessEnvelope } from '../../http';
@@ -123,6 +123,16 @@ export class ChatModulesRoutes {
     @Req() req: FastifyRequest,
   ): Promise<SuccessEnvelope<unknown>> {
     return this.controller.run(this.money.revertGifts(body, this.admin(req)));
+  }
+
+  @Get('money/reverts')
+  revertJobs(@Query() query: unknown): Promise<SuccessEnvelope<unknown>> {
+    return this.controller.run(this.money.revertJobs(query));
+  }
+
+  @Get('money/reverts/:jobId')
+  revertJob(@Param('jobId') jobId: string): Promise<SuccessEnvelope<unknown>> {
+    return this.controller.run(this.money.revertJob(jobId));
   }
 
   @Get('commands')

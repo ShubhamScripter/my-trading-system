@@ -17,6 +17,7 @@ import {
 import {
   AdPriceError,
   priceAd,
+  refundForAdvertiserStop,
   refundForCancel,
   unusedParts,
   unusedRefundUsd,
@@ -233,6 +234,7 @@ describe('Module 5: ad prices', () => {
     expect(priceAd(capped, base).totalUsd).toBe('9.00000000');
     const cappedUsd = { ...ads, repeat: { ...ads.repeat, discountPercent: 50, maxDiscountPercent: 50, maxDiscountUsd: '1' } };
     expect(priceAd(cappedUsd, base).totalUsd).toBe('9.00000000');
+    expect(priceAd(cappedUsd, { ...base, repeatCount: 5 }).totalUsd).toBe('29.00000000');
   });
 
   it('percentage extras compound: +10 % then +20 % on 100 is 132, not 130 (FR-107)', () => {
@@ -248,6 +250,14 @@ describe('Module 5: ad prices', () => {
     // Each paid link is a step of its own: two links at +20 % are 1.2 × 1.2.
     const two = priceAd({ ...compound, maxPaidLinks: 2 }, { rooms: [room('a'), room('b')], allRooms: false, links: 2, repeatCount: 0, pinMinutes: null });
     expect(two.totalUsd).toBe('158.40000000');
+  });
+
+  it('prices the same room set identically regardless of request order', () => {
+    const compound = { ...ads, extraRoom: { kind: 'PERCENT' as const, value: '10' } };
+    const rooms = [room('z', 'GLOBAL'), room('b'), room('a')];
+    const first = priceAd(compound, { rooms, allRooms: false, links: 0, repeatCount: 0, pinMinutes: null });
+    const reversed = priceAd(compound, { rooms: [...rooms].reverse(), allRooms: false, links: 0, repeatCount: 0, pinMinutes: null });
+    expect(reversed.totalUsd).toBe(first.totalUsd);
   });
 
   it('pinned minutes are charged once per ad per minute, not per room (V2-23)', () => {
@@ -293,10 +303,11 @@ describe('Module 5: ad prices', () => {
     );
   });
 
-  it('a refund covers only posts not made and pinned minutes not shown', () => {
-    expect(unusedParts({ totalPosts: 4, postedCount: 1, pinnedMinutes: 0, pinnedMinutesUsed: 0 })).toEqual({ unused: 3, units: 4 });
-    expect(unusedParts({ totalPosts: 1, postedCount: 1, pinnedMinutes: 10, pinnedMinutesUsed: 4 })).toEqual({ unused: 6, units: 11 });
-    expect(unusedRefundUsd('10.00000000', { unused: 3, units: 4 })).toBe('7.50000000');
+  it('a refund covers only posts not made and pinned time not shown, to the second', () => {
+    expect(unusedParts({ totalPosts: 4, postedCount: 1, pinnedMinutes: 0, pinnedSecondsUsed: 0 })).toEqual({ unused: 180, units: 240 });
+    expect(unusedParts({ totalPosts: 1, postedCount: 1, pinnedMinutes: 10, pinnedSecondsUsed: 240 })).toEqual({ unused: 360, units: 660 });
+    expect(unusedParts({ totalPosts: 0, postedCount: 0, pinnedMinutes: 1, pinnedSecondsUsed: 10 })).toEqual({ unused: 50, units: 60 });
+    expect(unusedRefundUsd('10.00000000', { unused: 180, units: 240 })).toBe('7.50000000');
     // Cut, never rounded: 2 / 3 of 10 is 6.66666666…, not 6.66666667.
     expect(unusedRefundUsd('10.00000000', { unused: 2, units: 3 })).toBe('6.66666666');
     expect(unusedRefundUsd('10.00000000', { unused: 0, units: 0 })).toBe('0.00000000');
@@ -304,8 +315,21 @@ describe('Module 5: ad prices', () => {
 
   it('the pinned minutes of a refund are counted once per ad, whatever the number of rooms (FR-107)', () => {
     const ad = { priceUsd: '12.00000000', repeatCount: 0, postedCount: 1, pinMinutes: 10, roomIds: ['a', 'b', 'c'] };
-    // 10 pinned minutes of 11 units, 4 shown: 6 of 11 unused
-    expect(refundForCancel(ad, 4)).toBe(unusedRefundUsd('12.00000000', { unused: 6, units: 11 }));
+    // 10 pinned minutes plus one post slot; 4 minutes shown: 6 of 11 minutes unused.
+    expect(refundForCancel(ad, 240)).toBe(unusedRefundUsd('12.00000000', { unused: 360, units: 660 }));
+  });
+
+  it('advertiser stop refunds only post-price lines and leaves pin/skin spend untouched', () => {
+    expect(refundForAdvertiserStop({
+      priceUsd: '15.00000000',
+      repeatCount: 1,
+      breakdown: [
+        { label: 'Base price', usd: '5.00000000' },
+        { label: 'Repeat 1', usd: '5.00000000' },
+        { label: 'Ad skin', usd: '1.00000000' },
+        { label: 'Pinned 10 min', usd: '4.00000000' },
+      ],
+    })).toBe('10.00000000');
   });
 });
 

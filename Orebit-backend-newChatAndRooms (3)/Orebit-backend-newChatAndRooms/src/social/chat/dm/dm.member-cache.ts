@@ -11,6 +11,7 @@ import type { MemberRow } from './dm.dboperation';
 const TTL_MS = 5_000;
 const MAX_ROWS = 20_000;
 const MAX_ENTRIES = 5_000;
+const MAX_CACHED_ROWS = 100_000;
 
 interface Entry {
   readonly at: number;
@@ -19,6 +20,8 @@ interface Entry {
 
 export class DmMemberCache {
   private readonly entries = new Map<string, Entry>();
+  private totalRows = 0;
+  private generation = 0;
 
   constructor(private readonly now: () => number = () => performance.now()) {}
 
@@ -27,33 +30,58 @@ export class DmMemberCache {
     const entry = this.entries.get(conversationId);
     if (!entry) return undefined;
     if (this.now() - entry.at > TTL_MS) {
-      this.entries.delete(conversationId);
+      this.delete(conversationId);
       return undefined;
     }
+    this.entries.delete(conversationId);
+    this.entries.set(conversationId, entry);
     return entry.rows;
   }
 
+  version(): number {
+    return this.generation;
+  }
+
   set(conversationId: string, rows: readonly MemberRow[]): void {
-    if (rows.length > MAX_ROWS) return;
-    if (this.entries.size >= MAX_ENTRIES) {
-      // Oldest first: a Map keeps insertion order.
+    this.setIfVersion(conversationId, rows, this.generation);
+  }
+
+  setIfVersion(conversationId: string, rows: readonly MemberRow[], version: number): void {
+    if (version !== this.generation || rows.length > MAX_ROWS || rows.length > MAX_CACHED_ROWS) return;
+    this.delete(conversationId);
+    while (this.entries.size >= MAX_ENTRIES || this.totalRows + rows.length > MAX_CACHED_ROWS) {
       const oldest = this.entries.keys().next().value;
-      if (oldest !== undefined) this.entries.delete(oldest);
+      if (oldest === undefined) return;
+      this.delete(oldest);
     }
-    this.entries.delete(conversationId);
     this.entries.set(conversationId, { at: this.now(), rows });
+    this.totalRows += rows.length;
   }
 
   invalidate(conversationId: string): void {
-    this.entries.delete(conversationId);
+    this.generation += 1;
+    this.delete(conversationId);
   }
 
   clear(): void {
     this.entries.clear();
+    this.totalRows = 0;
+    this.generation += 1;
   }
 
   get size(): number {
     return this.entries.size;
+  }
+
+  get rowCount(): number {
+    return this.totalRows;
+  }
+
+  private delete(conversationId: string): void {
+    const entry = this.entries.get(conversationId);
+    if (!entry) return;
+    this.entries.delete(conversationId);
+    this.totalRows -= entry.rows.length;
   }
 }
 

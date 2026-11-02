@@ -54,8 +54,8 @@ describe.skipIf(!url)('chat restrictions for every permission (real services, sc
   beforeAll(async () => {
     ({ prisma, module } = await bootChat(url!, emitted, () => document));
     u = await makeUsers(prisma, NAMES, tag);
-    await prisma.$executeRaw`INSERT INTO chat.staff_roles (user_id, role) VALUES (${u.boss.id}::uuid, 'ADMIN'::chat."StaffRole")`;
-    await prisma.$executeRaw`INSERT INTO chat.staff_roles (user_id, role) VALUES (${u.mod.id}::uuid, 'MODERATOR'::chat."StaffRole")`;
+    await prisma.$executeRaw`INSERT INTO chat.staff_roles (id, user_id, role) VALUES (${uuidv7()}::uuid, ${u.boss.id}::uuid, 'ADMIN'::chat."StaffRole")`;
+    await prisma.$executeRaw`INSERT INTO chat.staff_roles (id, user_id, role) VALUES (${uuidv7()}::uuid, ${u.mod.id}::uuid, 'MODERATOR'::chat."StaffRole")`;
     u.boss = { ...u.boss, staffRole: 'ADMIN' };
     u.mod = { ...u.mod, staffRole: 'MODERATOR' };
   }, 60_000);

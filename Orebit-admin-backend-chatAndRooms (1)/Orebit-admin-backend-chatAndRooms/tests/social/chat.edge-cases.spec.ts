@@ -163,13 +163,13 @@ describe.skipIf(!url)('FR-255: report statistics (scratch database)', () => {
       const statuses = ['ACTIONED', 'ACTIONED', 'DISMISSED', 'REVIEWED', 'PENDING'];
       for (const [i, status] of statuses.entries()) {
         await prisma.$executeRaw`
-          INSERT INTO chat.chat_message_reports (id, reporter_id, reported_user_id, reason, status, created_at)
-          VALUES (${ChatUtility.generateUuid()}::uuid, ${reporter}::uuid, ${target}::uuid, ${code}, ${status}::chat."ReportStatus", '2099-03-01T00:00:00Z'::timestamptz + make_interval(secs => ${i}))
+          INSERT INTO chat.chat_message_reports (id, reporter_id, reported_user_id, reason, report_type, status, created_at)
+          VALUES (${ChatUtility.generateUuid()}::uuid, ${reporter}::uuid, ${target}::uuid, ${code}, 'USER', ${status}::chat."ReportStatus", '2099-03-01T00:00:00Z'::timestamptz + make_interval(secs => ${i}))
         `;
       }
       const stats = await new ChatReportStatsDbOperation(prisma as never).stats({ from: '2099-01-01T00:00:00Z', to: '2099-12-31T00:00:00Z', top: 5 });
       expect(stats.totals).toEqual({ correct: 2, falseReports: 1, reviewed: 1, pending: 1 });
-      expect(stats.byReason).toEqual([{ reason: code, total: 5, correct: 2, falseReports: 1 }]);
+      expect(stats.byReason).toEqual([{ reportType: 'USER', reason: code, total: 5, correct: 2, falseReports: 1 }]);
       expect(stats.topReporters[0]).toMatchObject({ userId: reporter, total: 5, correct: 2, falseReports: 1 });
       expect(stats.mostReported[0]).toMatchObject({ userId: target, total: 5 });
       const none = await new ChatReportStatsDbOperation(prisma as never).stats({ from: '2000-01-01T00:00:00Z', to: '2000-02-01T00:00:00Z', top: 5 });

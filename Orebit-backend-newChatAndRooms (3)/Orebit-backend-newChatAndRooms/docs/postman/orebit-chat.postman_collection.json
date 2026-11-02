@@ -2,13 +2,13 @@
   "info": {
     "_postman_id": "orebit-chat-user-api",
     "name": "Orebit Chat — User API",
-    "description": "Chat HTTP routes of the user backend (default http://localhost:3005). Sign in first with the \"0. Sign in\" request: it stores the `orebit_session` cookie in Postman's cookie jar and the CSRF token in `csrfToken`. Every POST/PUT sends `x-orebit-csrf`. Set `roomId` (a room id or slug), `messageId` and `userId` in the collection variables. There is no bearer token. The socket is documented in `orebit-chat-socket.testing-guide.json`.\n\nGenerated from the chat section of openapi.json; tests/social/chat.openapi.spec.ts checks that every chat route is here.",
+    "description": "Chat HTTP routes of the user backend (default http://localhost:3001). Sign in first with the \"0. Sign in\" request: it stores the `orebit_session` cookie in Postman's cookie jar and the CSRF token in `csrfToken`. Every POST/PUT sends `x-orebit-csrf`. Set `roomId` (a room id or slug), `messageId` and `userId` in the collection variables. There is no bearer token. The socket is documented in `orebit-chat-socket.testing-guide.json`.\n\nGenerated from the chat section of openapi.json; tests/social/chat.openapi.spec.ts checks that every chat route is here.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
     {
       "key": "baseUrl",
-      "value": "http://localhost:3005"
+      "value": "http://localhost:3001"
     },
     {
       "key": "identifier",
@@ -2891,7 +2891,7 @@
             "description": "The code, then the transfer, then the notice in the room or conversation; the recipient gets `gift_received`.",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"code\": \"123456\"\n}",
+              "raw": "{\n  \"code\": \"{{paymentCode}}\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -5533,7 +5533,7 @@
             "description": "Answers the security verification of a rain: 2FA code, emailed code (Require One / Require Both), questionnaire answers (a wrong answer rejects the rain) and the KYC check. Then the rain is paid, or goes to the manual admin verification (VPN / Proxy rule).",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"rainId\": \"{{rainId}}\",\n  \"totpCode\": \"123456\",\n  \"emailCode\": \"123456\",\n  \"answers\": [\n    0\n  ]\n}",
+              "raw": "{\n  \"rainId\": \"{{rainId}}\",\n  \"totpCode\": \"{{totpCode}}\",\n  \"emailCode\": \"{{emailCode}}\",\n  \"answers\": [\n    0\n  ]\n}",
               "options": {
                 "raw": {
                   "language": "json"

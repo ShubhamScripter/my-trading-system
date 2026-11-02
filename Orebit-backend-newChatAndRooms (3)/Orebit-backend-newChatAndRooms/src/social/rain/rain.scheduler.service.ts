@@ -104,6 +104,11 @@ export class RainSchedulerService {
   async runSystemIfDue(): Promise<void> {
     const cfg = await this.db.config();
     const on = effectiveStatus(cfg, 'system') === 'ON';
+    if (!on) {
+      const hadSchedule = (await this.db.nextRainAt()) !== null;
+      if (hadSchedule && (await this.db.clearSchedule())) await this.announceSchedule();
+      return;
+    }
     if (on && (await this.db.nextRainAt()) === null) {
       if (await this.db.setNextIfEmpty(await this.pickNext(cfg))) await this.announceSchedule();
     }
@@ -111,10 +116,6 @@ export class RainSchedulerService {
     const due = await this.db.claimSystemLock(owner);
     if (!due) return;
     try {
-      if (!on) {
-        await this.db.releaseLock(owner);
-        return;
-      }
       const key = `system:${due.toISOString()}`;
       const existing = await this.db.findByKey(key);
       if (existing) {
@@ -181,11 +182,24 @@ export class RainSchedulerService {
     });
   }
 
-  async trySystemPay(cfg: RainConfig, key: string, chosen: RainSchedule | null): Promise<'skip' | 'paid'> {
+  async trySystemPay(
+    cfg: RainConfig,
+    key: string,
+    chosen: RainSchedule | null,
+    manual: RainJobRow['manualSystem'] = null,
+  ): Promise<'skip' | 'paid'> {
     const min = parseMinor(cfg.system.amountUsd.min) ?? 0n;
     const max = parseMinor(cfg.system.amountUsd.max) ?? 0n;
     let picked: SystemPot | null = null;
-    if (
+    if (manual) {
+      const usd = parseMinor(manual.usdAmount);
+      const price = await this.rainPorts.usdPrice(manual.currency);
+      const pot = usd === null || price === null ? null : usdToMinor(usd, price, 'down');
+      if (!cfg.system.currencies.includes(manual.currency) || usd === null || pot === null || pot <= 0n || usd < min || usd > max) {
+        throw new Error('Manual system rain currency or USD amount is outside the admin settings');
+      }
+      picked = { currency: manual.currency, pot, usd };
+    } else if (
       chosen?.currency &&
       chosen.potMinor !== null &&
       chosen.potUsdMinor !== null &&
@@ -208,16 +222,16 @@ export class RainSchedulerService {
       return 'skip';
     }
     const pot = picked.pot;
-    const room = await this.access.requireRoom(cfg.system.roomId ?? GLOBAL_ROOM_ID);
+    const room = await this.access.requireRoom(manual?.roomId ?? cfg.system.roomId ?? GLOBAL_ROOM_ID);
     const people = await this.selection.eligible(room, null);
-    const wanted = desiredRecipientCount(
+    const wanted = manual?.recipients ?? desiredRecipientCount(
       cfg.system.recipients.mode,
       people.length,
       cfg.system.recipients.count,
       cfg.system.recipients.percent,
       cfg.system.threshold,
     );
-    if (wanted < 1) {
+    if (wanted < 1 || (manual !== null && people.length < wanted)) {
       this.logger.warn({ eligible: people.length }, 'system rain skipped: nobody eligible is online');
       await this.audit('SYSTEM', null, 'SYSTEM_SKIPPED', null, 'nobody eligible is online', { eligible: people.length });
       return 'skip';
@@ -254,7 +268,8 @@ export class RainSchedulerService {
       await this.wallet.apply(tx, this.payout.legsOf(run, FEE_ACCOUNT), run.currency, {
         allowNegative: this.wallet.systemPoolUnlimited(),
       });
-      await this.db.insertRun(tx, run);
+      await this.db.insertRun(tx, { ...run, recipientCount: run.shares.length });
+      await this.db.insertShares(tx, run.id, run.shares);
     });
     await this.audit('SYSTEM', null, 'SYSTEM_PAID', run.id, null, {
       pot: formatMinor(pot),
@@ -269,12 +284,19 @@ export class RainSchedulerService {
   async runJob(job: RainJobRow): Promise<void> {
     try {
       if (job.kind === 'MANUAL_SYSTEM') {
+        if (!job.manualSystem) throw new Error('Manual system rain is missing the admin choices');
         const cfg = await this.db.config();
         if (effectiveStatus(cfg, 'system') !== 'ON') throw new Error('Rainpool is not ON');
-        const result = await this.trySystemPay(cfg, `manual:${job.id}`, null);
-        if (result === 'skip') throw new Error('Nobody eligible is online, no currency is configured, or no USD price');
-        const run = await this.db.findByKey(`manual:${job.id}`);
-        if (run) await this.payout.afterPaid(run);
+        const key = `manual:${job.id}`;
+        const existing = await this.db.findByKey(key);
+        if (existing) {
+          await this.payout.afterPaid(existing);
+        } else {
+          const result = await this.trySystemPay(cfg, key, null, job.manualSystem);
+          if (result === 'skip') throw new Error('Nobody eligible is online, no currency is configured, or no USD price');
+          const run = await this.db.findByKey(key);
+          if (run) await this.payout.afterPaid(run);
+        }
       } else if (job.kind === 'REVERT') {
         if (job.rainId) {
           const run = await this.db.findById(job.rainId);

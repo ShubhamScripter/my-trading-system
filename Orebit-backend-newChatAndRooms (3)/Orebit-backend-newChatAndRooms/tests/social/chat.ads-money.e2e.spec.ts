@@ -1,5 +1,5 @@
 import 'reflect-metadata';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { TestingModule } from '@nestjs/testing';
 import type { PrismaClient } from '@prisma/client';
 import { uuidv7 } from '../../src/utils/public.utils';
@@ -70,6 +70,7 @@ describe.skipIf(!url)('ads money, claims and recovery (real services, scratch da
   let charge: ReturnType<typeof chargePort>;
   let transferMode: 'ok' | 'throw' = 'ok';
   const transferStatus = new Map<string, unknown>();
+  const transferVoids: string[] = [];
 
   const settings = (ads: Record<string, unknown> = {}, gifts: Record<string, unknown> = {}) => {
     document = ChatSettingsDocumentSchema.parse({
@@ -110,6 +111,7 @@ describe.skipIf(!url)('ads money, claims and recovery (real services, scratch da
             return { status: 'COMPLETED', reference: `T-${reference}` };
           },
           status: async (reference: string) => transferStatus.get(reference) ?? { state: 'UNKNOWN' },
+          void: async (reference: string) => { transferVoids.push(reference); return true; },
           isRestricted: async () => false,
           revert: async () => ({ ok: true }),
         },
@@ -171,7 +173,10 @@ describe.skipIf(!url)('ads money, claims and recovery (real services, scratch da
     const rows = await adRows(u.cat);
     expect(rows).toHaveLength(1);
     expect(rows[0]!.status).toBe('ACTIVE');
-    expect(await adMessages(rows[0]!.id)).toBe(1);
+    await vi.waitFor(async () => expect(await adMessages(rows[0]!.id)).toBe(1), {
+      timeout: 5_000,
+      interval: 25,
+    });
   });
 
   it('the same key for a different request is a 409, not a silent copy of the first', async () => {
@@ -251,28 +256,22 @@ describe.skipIf(!url)('ads money, claims and recovery (real services, scratch da
   });
 
   // ─── FR-017: refunds and repeats are claimed ────────────────────────────────────────────────────────────────────
-  it('a cancel and two parallel passes pay the refund once; the coin must be one the admin offers', async () => {
+  it('an advertiser cannot cancel or refund a post after it has been shown', async () => {
     settings({ refundCurrencies: ['USDT', 'BTC'] });
     const bought = (await buy(u.cat, `key-${uuidv7()}`, { repeatCount: 3, repeatGapMinutes: 5 })) as { adId: string };
     // Not naming a coin, or naming one that is not offered, is refused.
     expect(await refusal(() => ads.cancel(u.cat, bought.adId))).toBe('validation_failed');
     expect(await refusal(() => ads.cancel(u.cat, bought.adId, 'doge'))).toBe('validation_failed');
-    const cancelled = await ads.cancel(u.cat, bought.adId, 'usdt');
-    expect(cancelled).toMatchObject({ status: 'CANCELLED', refundCurrency: 'USDT' });
-    expect(Number(cancelled.refundUsd)).toBeGreaterThan(0);
-    const cfg = await config();
-    await Promise.all([ads.moneyPass(cfg, Date.now() + 10_000), ads.moneyPass(cfg, Date.now() + 10_000), ads.moneyPass(cfg, Date.now() + 10_000)]);
-    expect(charge.refunds.filter((r) => r.refundReference === bought.adId)).toEqual([
-      { refundReference: bought.adId, usd: cancelled.refundUsd, currency: 'USDT' },
-    ]);
+    expect(await refusal(() => ads.cancel(u.cat, bought.adId, 'usdt'))).toBe('feature_disabled');
     const [row] = await prisma.$queryRaw<{ status: string }[]>`SELECT status FROM chat.chat_ads WHERE id = ${bought.adId}::uuid`;
-    expect(row!.status).toBe('REFUNDED');
+    expect(row!.status).toBe('ACTIVE');
+    expect(charge.refunds.filter((r) => r.refundReference === bought.adId)).toEqual([]);
   });
 
   it('with no refund coins on offer, none can be named', async () => {
     const bought = (await buy(u.dan, `key-${uuidv7()}`)) as { adId: string };
     expect(await refusal(() => ads.cancel(u.dan, bought.adId, 'USDT'))).toBe('validation_failed');
-    expect(await refusal(() => ads.cancel(u.dan, bought.adId))).toBe('ok');
+    expect(await refusal(() => ads.cancel(u.dan, bought.adId))).toBe('feature_disabled');
   });
 
   it('three parallel passes post a due repeat once, and the count never runs ahead', async () => {
@@ -345,6 +344,7 @@ describe.skipIf(!url)('ads money, claims and recovery (real services, scratch da
     expect((await state(stuck[0]!)).status).toBe('COMPLETED');
     expect((await state(stuck[1]!)).status).toBe('FAILED');
     expect((await state(stuck[2]!)).status).toBe('FAILED');
+    expect(transferVoids).toContain(stuck[2]);
     expect(await state(stuck[3]!)).toMatchObject({ status: 'PROCESSING', claimed_at: null });
     // The completed one got its notice, once; a second pass changes nothing.
     expect(emitted.filter((e) => e.event === 'gift_received' && (e.payload as { giftId: string }).giftId === stuck[0])).toHaveLength(1);

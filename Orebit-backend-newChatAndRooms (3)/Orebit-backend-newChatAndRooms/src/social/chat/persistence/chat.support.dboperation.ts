@@ -113,15 +113,6 @@ export class ChatSupportDbOperation {
     return rows[0] ? toTicket(rows[0]) : null;
   }
 
-  /** Count active (non-closed) tickets of the user to enforce ticket limit (FR-132). */
-  async countActive(userId: string): Promise<number> {
-    const rows = await this.prisma.$queryRaw<{ count: bigint }[]>`
-      SELECT COUNT(*)::bigint AS count
-      FROM chat.support_tickets
-      WHERE user_id = ${userId}::uuid AND status <> 'CLOSED'`;
-    return Number(rows[0]?.count ?? 0n);
-  }
-
   /** The user's tickets, most recently active first; `status` narrows to one tab. */
   async list(
     userId: string,

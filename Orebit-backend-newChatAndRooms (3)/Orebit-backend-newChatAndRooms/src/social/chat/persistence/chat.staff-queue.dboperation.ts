@@ -33,8 +33,9 @@ export class ChatStaffQueueDbOperation {
         message_retracted: boolean | null;
         reporter_id: string;
         reporter_username: string | null;
-        reported_user_id: string;
+        reported_user_id: string | null;
         reported_username: string | null;
+        dm_message_archived: boolean;
         reason: string;
         details: string | null;
         status: string;
@@ -46,11 +47,13 @@ export class ChatStaffQueueDbOperation {
       SELECT r.id, r.message_id, r.dm_message_id, m.room_id, COALESCE(m.content, dm.content) AS message_content,
              COALESCE(m.retracted_at, dm.retracted_at) IS NOT NULL AS message_retracted,
              r.reporter_id, u1.username AS reporter_username, r.reported_user_id, u2.username AS reported_username,
+             chat.dm_message_is_archived(r.dm_message_created_at) AS dm_message_archived,
              r.reason, r.details, r.status::text AS status, r.action, r.created_at,
              ${TIME_TEXT('r.created_at')} AS created_at_text
       FROM chat.chat_message_reports r
       LEFT JOIN chat.room_messages m ON m.id = r.message_id AND m.created_at = r.message_created_at
-      LEFT JOIN chat.dm_messages dm ON dm.id = r.dm_message_id AND dm.created_at = r.dm_message_created_at
+      LEFT JOIN LATERAL chat.dm_message_for_report(r.dm_message_id, r.dm_message_created_at) dm
+        ON r.dm_message_id IS NOT NULL
       LEFT JOIN identity.users u1 ON u1.id = r.reporter_id
       LEFT JOIN identity.users u2 ON u2.id = r.reported_user_id
       WHERE true ${status} ${before}
@@ -66,11 +69,13 @@ export class ChatStaffQueueDbOperation {
         message_id: string | null;
         dm_message_id: string | null;
         room_id: string | null;
-        reported_user_id: string;
+        reported_user_id: string | null;
+        dm_archived: boolean;
         status: string;
       }[]
     >`
-      SELECT r.id, r.message_id, r.dm_message_id, m.room_id, r.reported_user_id, r.status::text AS status
+      SELECT r.id, r.message_id, r.dm_message_id, m.room_id, r.reported_user_id,
+             chat.dm_message_is_archived(r.dm_message_created_at) AS dm_archived, r.status::text AS status
       FROM chat.chat_message_reports r
       LEFT JOIN chat.room_messages m ON m.id = r.message_id AND m.created_at = r.message_created_at
       WHERE r.id = ${id}::uuid
@@ -199,7 +204,8 @@ export class ChatStaffQueueDbOperation {
         (SELECT count(*)::int FROM chat.gift_transfers WHERE recipient_id = ${userId}::uuid AND status = 'COMPLETED') AS gifts_received,
         (SELECT sum(usd_value) FROM chat.gift_transfers WHERE sender_id = ${userId}::uuid AND status = 'COMPLETED') AS gifts_sent_usd,
         (SELECT count(*)::int FROM chat.chat_ads WHERE creator_id = ${userId}::uuid) AS ads,
-        (SELECT sum(price_usd) FROM chat.chat_ads WHERE creator_id = ${userId}::uuid) AS ads_usd
+        (SELECT sum(GREATEST(price_usd - COALESCE(refund_usd, 0), 0)) FROM chat.chat_ads
+          WHERE creator_id = ${userId}::uuid AND status <> 'FAILED') AS ads_usd
     `;
     return rows[0]!;
   }

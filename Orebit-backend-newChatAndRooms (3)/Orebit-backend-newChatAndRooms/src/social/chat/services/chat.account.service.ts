@@ -213,7 +213,7 @@ export class ChatAccountService {
       });
 
     const dbNow = await this.db.dbNow();
-    await this.moderation.assertNotBanned(user.id, null, dbNow);
+    await this.moderation.assertNotBanned(user, null, dbNow);
     const settings = await this.access.settingsFor(user);
 
     // The room the file is for (optional): the user must be able to write there, checked before anything is stored.

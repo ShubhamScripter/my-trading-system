@@ -224,7 +224,7 @@ export class RainAdminDbOperation {
   }
 
   // Lists recipient shares of a rain
-  async recipients(rainId: string) {
+  async recipients(rainId: string, limit: number, before: { amountMinor: string; userId: string } | null) {
     const rows = await this.prisma.$queryRaw<
       {
         user_id: string;
@@ -239,7 +239,10 @@ export class RainAdminDbOperation {
       FROM rain.recipients p
       LEFT JOIN identity.users u ON u.id = p.user_id
       WHERE p.rain_id = ${rainId}::uuid
+        AND (${before?.amountMinor ?? null}::numeric IS NULL OR p.amount_minor < ${before?.amountMinor ?? null}::numeric
+             OR (p.amount_minor = ${before?.amountMinor ?? null}::numeric AND p.user_id > ${before?.userId ?? null}::uuid))
       ORDER BY p.amount_minor DESC, p.user_id
+      LIMIT ${limit + 1}
     `;
     return rows.map((row) => ({
       userId: row.user_id,
@@ -271,6 +274,7 @@ export class RainAdminDbOperation {
     payerRefund?: 'REFUND' | 'NONE';
     shortfall?: 'ZERO' | 'NEGATIVE';
     filter?: RainRevertFilter | null;
+    manualSystem?: { currency: string; usdAmount: string; roomId: string; recipients: number } | null;
   }): Promise<string | null> {
     const id = uuidv7();
     const count = await this.prisma.$executeRaw`
@@ -278,7 +282,7 @@ export class RainAdminDbOperation {
       VALUES (
         ${id}::uuid, ${input.kind}, ${input.rainId}::uuid, ${input.adminId}::uuid, ${input.reason}, 'PENDING',
         ${input.payerRefund ?? 'REFUND'}, ${input.shortfall ?? 'ZERO'},
-        ${input.filter ? JSON.stringify(input.filter) : null}::jsonb
+        ${input.manualSystem ? JSON.stringify(input.manualSystem) : input.filter ? JSON.stringify(input.filter) : null}::jsonb
       )
       ON CONFLICT DO NOTHING
     `;

@@ -119,6 +119,6 @@ describe('the chat Postman collection', () => {
   it('uses the user backend port', () => {
     expect(
       readFileSync(join(ROOT, 'docs', 'postman', 'orebit-chat.postman_collection.json'), 'utf8'),
-    ).toContain('http://localhost:3005');
+    ).toContain('http://localhost:3001');
   });
 });

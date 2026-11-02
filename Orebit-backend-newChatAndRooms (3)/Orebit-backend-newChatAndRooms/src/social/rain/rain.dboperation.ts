@@ -117,7 +117,7 @@ export class RainDbOperation {
 
   async config(): Promise<RainConfig> {
     const rows = await this.prisma.$queryRaw<{ config: unknown }[]>`
-      SELECT config FROM rain.config WHERE id = 1
+      SELECT document AS config FROM rain.config WHERE id = 1
     `;
     if (!rows[0]) return DEFAULT_RAIN_CONFIG;
     const parsed = RainConfigSchema.safeParse(rows[0].config);
@@ -125,15 +125,20 @@ export class RainDbOperation {
   }
 
   async patchStatus(patch: RainStatusPatch): Promise<{ before: RainConfig['status']; after: RainConfig['status'] }> {
-    const before = (await this.config()).status;
-    const current = await this.config();
-    const updated = applyStatusPatch(current, patch);
-    await this.prisma.$executeRaw`
-      INSERT INTO rain.config (id, config, version)
-      VALUES (1, ${JSON.stringify(updated)}::jsonb, 1)
-      ON CONFLICT (id) DO UPDATE SET config = ${JSON.stringify(updated)}::jsonb, version = rain.config.version + 1
-    `;
-    return { before, after: updated.status };
+    return this.prisma.$transaction(async (tx) => {
+      const rows = await tx.$queryRaw<{ config: unknown }[]>`
+        SELECT document AS config FROM rain.config WHERE id = 1 FOR UPDATE
+      `;
+      if (!rows[0]) throw new Error('Rain configuration is missing; status was not changed');
+      const parsed = RainConfigSchema.safeParse(rows[0].config);
+      if (!parsed.success) throw new Error('Rain configuration is invalid; status was not changed');
+      const updated = applyStatusPatch(parsed.data, patch);
+      await tx.$executeRaw`
+        UPDATE rain.config SET document = ${JSON.stringify(updated)}::jsonb, version = version + 1
+        WHERE id = 1
+      `;
+      return { before: parsed.data.status, after: updated.status };
+    });
   }
 
   async nextRainAt(): Promise<Date | null> {
@@ -153,7 +158,9 @@ export class RainDbOperation {
         scheduled_at: Date | null;
       }[]
     >`
-      SELECT next_rain_at, currency, pot_minor, pot_usd_minor, scheduled_at FROM rain.schedule WHERE id = 1
+      SELECT next_rain_at, next_currency AS currency, next_pot_minor AS pot_minor,
+             next_pot_usd_minor AS pot_usd_minor, scheduled_at
+      FROM rain.schedule WHERE id = 1
     `;
     const row = rows[0];
     if (!row) return { nextRainAt: null, currency: null, potMinor: null, potUsdMinor: null, scheduledAt: null };
@@ -169,11 +176,11 @@ export class RainDbOperation {
   async claimSystemLock(owner: string): Promise<Date | null> {
     const rows = await this.prisma.$queryRaw<{ next_rain_at: Date | null }[]>`
       UPDATE rain.schedule
-      SET locked_by = ${owner}, locked_at = now()
+      SET lock_owner = ${owner}, lock_until = now() + interval '2 minutes'
       WHERE id = 1
         AND next_rain_at IS NOT NULL
         AND next_rain_at <= now()
-        AND (locked_by IS NULL OR locked_at < now() - interval '2 minutes')
+        AND (lock_owner IS NULL OR lock_until < now())
       RETURNING next_rain_at
     `;
     return rows[0]?.next_rain_at ?? null;
@@ -183,19 +190,19 @@ export class RainDbOperation {
     await this.prisma.$executeRaw`
       UPDATE rain.schedule
       SET next_rain_at = ${next.at},
-          currency = ${next.currency},
-          pot_minor = ${next.potMinor?.toString() ?? null}::bigint,
-          pot_usd_minor = ${next.potUsdMinor?.toString() ?? null}::bigint,
+          next_currency = ${next.currency},
+          next_pot_minor = ${next.potMinor?.toString() ?? null}::bigint,
+          next_pot_usd_minor = ${next.potUsdMinor?.toString() ?? null}::bigint,
           scheduled_at = now(),
-          locked_by = NULL,
-          locked_at = NULL
-      WHERE id = 1 AND locked_by = ${owner}
+          lock_owner = NULL,
+          lock_until = NULL
+      WHERE id = 1 AND lock_owner = ${owner}
     `;
   }
 
   async releaseLock(owner: string): Promise<void> {
     await this.prisma.$executeRaw`
-      UPDATE rain.schedule SET locked_by = NULL, locked_at = NULL WHERE id = 1 AND locked_by = ${owner}
+      UPDATE rain.schedule SET lock_owner = NULL, lock_until = NULL WHERE id = 1 AND lock_owner = ${owner}
     `;
   }
 
@@ -203,22 +210,23 @@ export class RainDbOperation {
     const count = await this.prisma.$executeRaw`
       UPDATE rain.schedule
       SET next_rain_at = ${next.at},
-          currency = ${next.currency},
-          pot_minor = ${next.potMinor?.toString() ?? null}::bigint,
-          pot_usd_minor = ${next.potUsdMinor?.toString() ?? null}::bigint,
+          next_currency = ${next.currency},
+          next_pot_minor = ${next.potMinor?.toString() ?? null}::bigint,
+          next_pot_usd_minor = ${next.potUsdMinor?.toString() ?? null}::bigint,
           scheduled_at = now()
       WHERE id = 1 AND (next_rain_at IS NULL OR next_rain_at < now() - interval '1 hour')
     `;
     return count > 0;
   }
 
-  async clearSchedule(): Promise<void> {
-    await this.prisma.$executeRaw`
+  async clearSchedule(): Promise<boolean> {
+    const changed = await this.prisma.$executeRaw`
       UPDATE rain.schedule
-      SET next_rain_at = NULL, currency = NULL, pot_minor = NULL, pot_usd_minor = NULL, scheduled_at = NULL,
-          locked_by = NULL, locked_at = NULL
-      WHERE id = 1
+      SET next_rain_at = NULL, next_currency = NULL, next_pot_minor = NULL, next_pot_usd_minor = NULL,
+          scheduled_at = NULL, lock_owner = NULL, lock_until = NULL
+      WHERE id = 1 AND (lock_owner IS NULL OR lock_until < now())
     `;
+    return changed > 0;
   }
 
   async unwantedBetween(userId: string, others: readonly string[]): Promise<Set<string>> {
@@ -276,6 +284,14 @@ export class RainDbOperation {
     }));
   }
 
+  async usernamesByIds(userIds: readonly string[]): Promise<Map<string, string>> {
+    if (userIds.length === 0) return new Map();
+    const rows = await this.prisma.$queryRaw<{ id: string; username: string }[]>`
+      SELECT id::text, username FROM identity.users WHERE id = ANY(${[...userIds]}::uuid[])
+    `;
+    return new Map(rows.map((row) => [row.id, row.username]));
+  }
+
   async insertRun(
     tx: Db,
     row: {
@@ -288,6 +304,7 @@ export class RainDbOperation {
       potMinor: bigint;
       feeMinor: bigint;
       distributableMinor: bigint;
+      recipientCount: number;
       idempotencyKey: string;
       requestedRecipients?: number | null;
       recipientRule?: RecipientRule | null;
@@ -302,12 +319,12 @@ export class RainDbOperation {
     await tx.$executeRaw`
       INSERT INTO rain.runs (
         id, kind, status, room_id, initiator_id, currency, pot_minor, fee_minor, distributable_minor,
-        idempotency_key, requested_recipients, recipient_rule, repeat_count, repeat_gap_seconds,
+        recipient_count, idempotency_key, requested_recipients, recipient_rule, repeat_count, repeat_gap_seconds,
         usd_price_minor, usd_value_minor, security, verify_expires_at
       ) VALUES (
         ${row.id}::uuid, ${row.kind}, ${row.status}, ${row.roomId}::uuid, ${row.initiatorId ?? null}::uuid,
         ${row.currency}, ${row.potMinor.toString()}::bigint, ${row.feeMinor.toString()}::bigint,
-        ${row.distributableMinor.toString()}::bigint, ${row.idempotencyKey},
+        ${row.distributableMinor.toString()}::bigint, ${row.recipientCount}, ${row.idempotencyKey},
         ${row.requestedRecipients ?? null}, ${row.recipientRule ? JSON.stringify(row.recipientRule) : null}::jsonb,
         ${row.repeatCount ?? null}, ${row.repeatGapSeconds ?? null},
         ${row.usdPriceMinor != null ? row.usdPriceMinor.toString() : null}::bigint,
@@ -381,10 +398,12 @@ export class RainDbOperation {
     return rows.map((row) => ({ id: row.id, initiatorId: row.initiator_id }));
   }
 
-  async expireOne(id: string): Promise<void> {
-    await this.prisma.$executeRaw`
+  async expireOne(id: string, userId: string): Promise<boolean> {
+    const count = await this.prisma.$executeRaw`
       UPDATE rain.runs SET status = 'EXPIRED', verify_expires_at = NULL WHERE id = ${id}::uuid AND status = 'PENDING_VERIFICATION'
+        AND initiator_id = ${userId}::uuid
     `;
+    return count > 0;
   }
 
   async setMessage(id: string, messageId: string): Promise<void> {
@@ -402,11 +421,11 @@ export class RainDbOperation {
     return count > 0;
   }
 
-  takeShares(tx: Db, rainId: string, userIds: readonly string[]) {
+  takeShares(tx: Db, rainId: string, userIds: readonly string[] | null) {
     return this.revertDb.takeShares(tx, rainId, userIds);
   }
-  setReclaimed(tx: Db, rainId: string, reclaimed: ReadonlyMap<string, bigint>) {
-    return this.revertDb.setReclaimed(tx, rainId, reclaimed);
+  setReclaimed(tx: Db, rainId: string, reclaimed: ReadonlyMap<string, bigint>, jobId: string) {
+    return this.revertDb.setReclaimed(tx, rainId, reclaimed, jobId);
   }
   openShareCount(tx: Db, rainId: string) {
     return this.revertDb.openShareCount(tx, rainId);

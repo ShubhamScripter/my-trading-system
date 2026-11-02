@@ -18,7 +18,7 @@ export class ChatSupportRoutes {
     return ok(await this.support.tickets(query));
   }
 
-  /** One ticket with its conversation: `?ticketId=`. */
+  /** One ticket with a page of its conversation: `?ticketId=&limit=&cursor=`. */
   @Get('ticket')
   async ticket(@Query() query: unknown): Promise<SuccessEnvelope<unknown>> {
     return ok(await this.support.ticket(query));

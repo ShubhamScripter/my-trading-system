@@ -95,6 +95,7 @@ export class ChatStaffQueueService {
         id: r.id,
         messageId: r.message_id,
         dmMessageId: r.dm_message_id,
+        dmMessageArchived: r.dm_message_archived,
         roomId: r.room_id,
         // A retracted message's text only for staff who may see deleted messages.
         messageContent: r.message_retracted && !seeDeleted ? null : r.message_content,
@@ -148,6 +149,18 @@ export class ChatStaffQueueService {
         409,
       );
     }
+    if (input.action === 'RETRACT_MESSAGE' && report.dm_message_id && report.dm_archived) {
+      throw new ProblemException({
+        type: ERR.VALIDATION_FAILED,
+        detail: 'Archived messages are read-only and cannot be retracted',
+      });
+    }
+    if ((input.action === 'WARN' || input.action === 'BAN') && !report.reported_user_id) {
+      throw new ProblemException({
+        type: ERR.VALIDATION_FAILED,
+        detail: 'This report has no user target; dismiss it or retract its message instead',
+      });
+    }
     // The report is claimed FIRST (PENDING → resolved, one statement): of two moderators acting together only one gets
     // it, so a ban or a warning is made once. The other is told it is resolved and does nothing. If the action
     // fails, or REPORT mode only asks someone else to act, the claim is given back.
@@ -166,7 +179,7 @@ export class ChatStaffQueueService {
     };
     let outcome: unknown = null;
     try {
-      outcome = await this.performReportAction(user, report, reasons, input);
+      outcome = await this.performReportAction(user, reportId, report, reasons, input);
     } catch (err: unknown) {
       await this.queueDb.reopenReport(reportId, user.id);
       throw err;
@@ -182,7 +195,8 @@ export class ChatStaffQueueService {
   // The action itself, after the report was claimed.
   private async performReportAction(
     user: ChatUserContext,
-    report: { message_id: string | null; reported_user_id: string; room_id: string | null },
+    reportId: string,
+    report: { message_id: string | null; reported_user_id: string | null; room_id: string | null },
     reasons: PenaltyReasons,
     input: { action: ReportAction; durationHours?: number; permanent?: boolean; note?: string },
   ): Promise<unknown> {
@@ -191,16 +205,20 @@ export class ChatStaffQueueService {
       case 'DISMISS':
         break;
       case 'WARN':
+        if (!report.reported_user_id) throw new ProblemException({ type: ERR.VALIDATION_FAILED, detail: 'This report has no user target' });
         outcome = await this.staff.staffWarn(user, {
           userId: report.reported_user_id,
           roomId: report.room_id,
+          reportId: reportId,
           ...reasons,
         });
         break;
       case 'BAN':
+        if (!report.reported_user_id) throw new ProblemException({ type: ERR.VALIDATION_FAILED, detail: 'This report has no user target' });
         outcome = await this.staff.staffBan(user, {
           userId: report.reported_user_id,
           roomId: report.room_id,
+          reportId: reportId,
           ...reasons,
           ...(input.permanent ? { permanent: true } : { durationHours: input.durationHours ?? 24 }),
         });
@@ -217,7 +235,7 @@ export class ChatStaffQueueService {
             ],
           });
         }
-        const result = await this.chat.retract(user, report.message_id, input.note ?? null);
+        const result = await this.chat.retract(user, report.message_id, input.note ?? null, reportId);
         if (!isRequested(result)) this.delivery.publishRetracted(result);
         outcome = result;
         break;

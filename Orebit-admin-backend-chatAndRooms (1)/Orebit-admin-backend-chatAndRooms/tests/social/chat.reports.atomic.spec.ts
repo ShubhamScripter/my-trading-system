@@ -44,7 +44,9 @@ describe.skipIf(!url)('acting on a report is atomic (scratch database)', () => {
 
   beforeAll(async () => {
     prisma = new PrismaClient({ datasourceUrl: url });
-    await prisma.$executeRaw`INSERT INTO chat.report_reasons (code, label, is_active, sort_order) VALUES ('atomic_test', 'Atomic test', true, 999) ON CONFLICT (code) DO NOTHING`;
+    await prisma.$executeRaw`INSERT INTO chat.report_reasons (code, label, report_type, is_active, sort_order)
+      VALUES ('atomic_test', 'Atomic test', 'MESSAGE', true, 999)
+      ON CONFLICT (code, report_type) DO NOTHING`;
     await user(reported, `rep${tag}`);
     await user(reporter, `rpr${tag}`);
     const db = new ChatModerationDbOperation(prisma as never);

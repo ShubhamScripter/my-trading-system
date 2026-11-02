@@ -3,6 +3,7 @@ import { PrismaService } from '../../../db/client';
 import { uuidv7 } from '../../utils/public.utils';
 import {
   RainRevertFilterSchema,
+  ManualSystemRainSchema,
   RainStatusPatchSchema,
   type RainStatusPatch,
 } from './rain.contract';
@@ -66,6 +67,7 @@ export class RainJobsDbOperation {
     const row = rows[0];
     if (!row) return null;
     const filter = row.filter === null ? null : RainRevertFilterSchema.safeParse(row.filter);
+    const manualSystem = row.kind === 'MANUAL_SYSTEM' ? ManualSystemRainSchema.safeParse(row.filter) : null;
     return {
       id: row.id,
       kind: row.kind,
@@ -75,6 +77,7 @@ export class RainJobsDbOperation {
       payerRefund: row.payer_refund,
       shortfall: row.shortfall,
       filter: filter === null ? null : filter.success ? filter.data : null,
+      manualSystem: manualSystem && manualSystem.success ? manualSystem.data : null,
     };
   }
 
@@ -215,7 +218,7 @@ export class RainJobsDbOperation {
   }
 
   async repeatsOf(userId: string): Promise<
-    { id: string; currency: string; potMinor: bigint; remaining: number; gapSeconds: number; nextRunAt: string }[]
+    { id: string; currency: string; potMinor: string; remaining: number; gapSeconds: number; nextRunAt: string }[]
   > {
     const rows = await this.prisma.$queryRaw<
       { id: string; currency: string; pot_minor: bigint; remaining: number; gap_seconds: number; next_run_at: Date }[]
@@ -227,7 +230,7 @@ export class RainJobsDbOperation {
     return rows.map((row) => ({
       id: row.id,
       currency: row.currency,
-      potMinor: BigInt(row.pot_minor),
+      potMinor: BigInt(row.pot_minor).toString(),
       remaining: row.remaining,
       gapSeconds: row.gap_seconds,
       nextRunAt: row.next_run_at.toISOString(),

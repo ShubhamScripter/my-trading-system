@@ -25,6 +25,7 @@ export function missingMoneyNumbers(settings: ChatSettings): string[] {
       ['ads.jobStaleMinutes', ads.jobStaleMinutes],
       ['ads.jobPageSize', ads.jobPageSize],
       ['ads.jobBudgetSeconds', ads.jobBudgetSeconds],
+      ['gifts.processingStaleMinutes', settings.gifts.processingStaleMinutes],
     ] as const
   )
     .filter(([, value]) => value === null)

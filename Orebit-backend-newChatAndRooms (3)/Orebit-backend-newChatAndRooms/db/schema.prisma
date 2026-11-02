@@ -59,8 +59,8 @@ model User {
   username      String
   usernameLower String @map("username_lower")
 
-  email      String
-  emailLower String @map("email_lower")
+  email           String
+  emailLower      String    @map("email_lower")
   /// Set when a registration OTP is verified, or when a provider asserted the
   /// address was verified. Null means the address was never proven.
   emailVerifiedAt DateTime? @map("email_verified_at") @db.Timestamptz
@@ -84,7 +84,7 @@ model User {
   /// Written inside the same transaction as `email`/`emailLower` — in `changeEmail`
   /// and `recoverEmail` — so there is no instant at which the address has moved and
   /// this has not.
-  emailChangedAt  DateTime? @map("email_changed_at") @db.Timestamptz
+  emailChangedAt DateTime? @map("email_changed_at") @db.Timestamptz
 
   status UserStatus @default(ACTIVE)
 
@@ -99,7 +99,7 @@ model User {
 
   /// The avatar image URL asserted by an OAuth provider (e.g. Google profile photo)
   /// or uploaded by the user.
-  avatarUrl       String? @map("avatar_url")
+  avatarUrl String? @map("avatar_url")
 
   /// ─── the anti-phishing code ───────────────────────────────────────────────
   ///
@@ -137,10 +137,10 @@ model User {
   ///
   /// AAD is `anti-phishing:v1:<userId>`, so these columns cannot be copied onto
   /// another account's row and opened.
-  antiPhishingCiphertext Bytes? @map("anti_phishing_ciphertext")
-  antiPhishingIv         Bytes? @map("anti_phishing_iv")
-  antiPhishingTag        Bytes? @map("anti_phishing_tag")
-  antiPhishingKeyVersion Int?   @map("anti_phishing_key_version")
+  antiPhishingCiphertext Bytes?    @map("anti_phishing_ciphertext")
+  antiPhishingIv         Bytes?    @map("anti_phishing_iv")
+  antiPhishingTag        Bytes?    @map("anti_phishing_tag")
+  antiPhishingKeyVersion Int?      @map("anti_phishing_key_version")
   /// When the code was first set. Not bumped by a change — the security-changed email
   /// and the log line are the record of those, exactly as they are for the Payment PIN.
   antiPhishingSetAt      DateTime? @map("anti_phishing_set_at") @db.Timestamptz
@@ -185,7 +185,7 @@ model User {
   /// claims a due row sets it in the same transaction that deletes the row, so it takes
   /// the row lock and re-states the preconditions without ever reaching disk. It is a
   /// claim, not a state.
-  deletedAt    DateTime? @map("deleted_at") @db.Timestamptz
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz
 
   /// ─── the delayed deletion ─────────────────────────────────────────────────
   ///
@@ -210,16 +210,16 @@ model User {
   oauthLinks     OauthLink[]
   challenges     VerificationChallenge[]
   trustedDevices TrustedDevice[]
-  registrations Registration[]
+  registrations  Registration[]
 
-  totpFactors    TotpFactor[]
-  passkeys       Passkey[]
-  recoveryCodes  RecoveryCode[]
-  loginAttempts  LoginAttempt[]
+  totpFactors   TotpFactor[]
+  passkeys      Passkey[]
+  recoveryCodes RecoveryCode[]
+  loginAttempts LoginAttempt[]
 
   /// Singular, unlike every other relation above: one Payment PIN per account, and
   /// the optionality IS the setting. See `PaymentPin`.
-  paymentPin     PaymentPin?
+  paymentPin PaymentPin?
 
   /// Addresses this account has released by changing its email, still inside their
   /// retention window. Plural because the rows are kept after they expire; at most
@@ -283,11 +283,11 @@ model Credential {
   userId String @map("user_id") @db.Uuid
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  kind CredentialKind @default(PASSWORD)
+  kind         CredentialKind @default(PASSWORD)
   /// argon2id encoded string — carries its own salt and parameters, which is why
   /// there is no separate salt column.
-  passwordHash String @map("password_hash")
-  passwordAlgo String @default("argon2id") @map("password_algo")
+  passwordHash String         @map("password_hash")
+  passwordAlgo String         @default("argon2id") @map("password_algo")
 
   /// Durable lockout state. In the database rather than Redis on purpose: it must
   /// keep enforcing with the cache down, which is exactly when a brute-force
@@ -305,11 +305,11 @@ model Credential {
   ///
   /// Beside `failedAttempts` rather than in Redis for the same reason it is: a
   /// ladder a cache flush resets is a ladder that never climbs.
-  lockoutStrikes   Int       @default(0) @map("lockout_strikes")
+  lockoutStrikes  Int       @default(0) @map("lockout_strikes")
   /// When the most recent strike was earned. The ladder's memory decays from HERE,
   /// not from the first strike — anchoring to the first would let a patient caller
   /// wait out the window and start again at rung one indefinitely.
-  lockoutStrikeAt  DateTime? @map("lockout_strike_at") @db.Timestamptz
+  lockoutStrikeAt DateTime? @map("lockout_strike_at") @db.Timestamptz
 
   createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz
   updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz
@@ -846,10 +846,10 @@ enum MfaMethod {
 /// nullable timestamp meaning almost the same thing would only invite the two to
 /// disagree.
 model Session {
-  id       String @id @db.Uuid
-  userId   String @map("user_id") @db.Uuid
-  user     User   @relation(fields: [userId], references: [id], onDelete: Cascade)
-  familyId String @map("family_id") @db.Uuid
+  id       String  @id @db.Uuid
+  userId   String  @map("user_id") @db.Uuid
+  user     User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  familyId String  @map("family_id") @db.Uuid
   /// Null on the first generation of a family.
   parentId String? @map("parent_id") @db.Uuid
 
@@ -889,8 +889,8 @@ model Session {
   country           String? @db.Char(2)
   userAgent         String? @map("user_agent") @db.VarChar(256)
 
-  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz
-  expiresAt DateTime  @map("expires_at") @db.Timestamptz
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  expiresAt DateTime @map("expires_at") @db.Timestamptz
 
   /// Last authenticated request on this session. Written by AuthGuard, throttled —
   /// see SESSION.LAST_USED_THROTTLE_SECONDS.
@@ -927,11 +927,11 @@ model Session {
 
   /// Set once this generation has been exchanged for a child. A second exchange
   /// is by definition a replay.
-  rotatedAt DateTime? @map("rotated_at") @db.Timestamptz
-  revokedAt DateTime? @map("revoked_at") @db.Timestamptz
+  rotatedAt     DateTime? @map("rotated_at") @db.Timestamptz
+  revokedAt     DateTime? @map("revoked_at") @db.Timestamptz
   /// LOGOUT | LOGOUT_ALL | REUSE_DETECTED | PASSWORD_RESET | PASSWORD_CHANGED
   /// | PASSKEY_DISABLED | TOTP_DISABLED
-  revokedReason String? @map("revoked_reason") @db.VarChar(32)
+  revokedReason String?   @map("revoked_reason") @db.VarChar(32)
 
   @@index([userId, revokedAt])
   @@index([familyId])
@@ -984,14 +984,14 @@ model TrustedDevice {
 /// disposable, and several abandoned attempts for one address are normal. The real
 /// uniqueness guarantee is on `User`.
 model Registration {
-  id    String            @id @db.Uuid
-  email String
+  id                  String            @id @db.Uuid
+  email               String
   /// Normalised copy, so a resumed attempt matches regardless of how it was typed
   /// the second time.
-  emailLower String            @map("email_lower")
-  state      RegistrationState @default(OTP_SENT)
+  emailLower          String            @map("email_lower")
+  state               RegistrationState @default(OTP_SENT)
   /// Argon2id hash captured at `credentials`; cleared in the final account-creation transaction.
-  pendingPasswordHash String? @map("pending_password_hash")
+  pendingPasswordHash String?           @map("pending_password_hash")
 
   /// sha256 of the continuation secret the client holds as `signupId`.
   ///
@@ -1020,11 +1020,11 @@ model Registration {
   /// sha256 of the current code plus the pepper. Null once verified — a verified
   /// registration has no live code, and leaving the hash behind would only be a
   /// thing to leak.
-  otpHash      String?   @map("otp_hash")
-  otpExpiresAt DateTime? @map("otp_expires_at") @db.Timestamptz
+  otpHash       String?   @map("otp_hash")
+  otpExpiresAt  DateTime? @map("otp_expires_at") @db.Timestamptz
   /// Counted on the row, not only in Redis, so the cap survives a cache flush.
-  otpAttempts  Int       @default(0) @map("otp_attempts")
-  otpSentCount Int       @default(1) @map("otp_sent_count")
+  otpAttempts   Int       @default(0) @map("otp_attempts")
+  otpSentCount  Int       @default(1) @map("otp_sent_count")
   lastOtpSentAt DateTime? @map("last_otp_sent_at") @db.Timestamptz
 
   emailVerifiedAt DateTime? @map("email_verified_at") @db.Timestamptz
@@ -1059,10 +1059,10 @@ model Registration {
   completedAt DateTime? @map("completed_at") @db.Timestamptz
   /// Whole-attempt TTL. An abandoned registration expires rather than lingering
   /// as a resumable half-account.
-  expiresAt DateTime  @map("expires_at") @db.Timestamptz
-  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz
-  deletedAt DateTime? @map("deleted_at") @db.Timestamptz
+  expiresAt   DateTime  @map("expires_at") @db.Timestamptz
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+  deletedAt   DateTime? @map("deleted_at") @db.Timestamptz
 
   /// Set when the attempt began at a provider rather than at `step: start`. The
   /// OauthLink row is written at account creation, in the same transaction as the
@@ -1117,17 +1117,17 @@ model OauthLink {
 
   /// Provenance only — `User.email` stays authoritative. Kept so a support
   /// question about which address a provider asserted is answerable.
-  emailAtLink             String?  @map("email_at_link")
-  emailVerifiedByProvider Boolean  @default(false) @map("email_verified_by_provider")
-  avatarUrlAtLink         String?  @map("avatar_url_at_link")
+  emailAtLink             String?   @map("email_at_link")
+  emailVerifiedByProvider Boolean   @default(false) @map("email_verified_by_provider")
+  avatarUrlAtLink         String?   @map("avatar_url_at_link")
   /// The display name the provider asserted at link time, for the Settings screen.
   ///
   /// Provenance like the two fields above, and nullable for two distinct reasons
   /// that both stay true: Apple publishes no name in its ID token and has no
   /// endpoint to fetch one, and rows written before this column existed have none.
   /// A settings screen therefore falls back to the address, then the provider name.
-  nameAtLink              String?  @map("name_at_link")
-  linkedAt                DateTime @default(now()) @map("linked_at") @db.Timestamptz
+  nameAtLink              String?   @map("name_at_link")
+  linkedAt                DateTime  @default(now()) @map("linked_at") @db.Timestamptz
   lastLoginAt             DateTime? @map("last_login_at") @db.Timestamptz
 
   /// When the owner asked for this link to go away, and when it actually will.
@@ -1149,10 +1149,10 @@ model OauthLink {
   ///
   /// Cleared together, by exactly one path — re-linking the SAME provider identity,
   /// which is how a mis-clicked unlink is taken back. See `OauthService.attachToAccount`.
-  unlinkRequestedAt       DateTime? @map("unlink_requested_at") @db.Timestamptz
-  unlinkAt                DateTime? @map("unlink_at") @db.Timestamptz
+  unlinkRequestedAt DateTime? @map("unlink_requested_at") @db.Timestamptz
+  unlinkAt          DateTime? @map("unlink_at") @db.Timestamptz
 
-  deletedAt               DateTime? @map("deleted_at") @db.Timestamptz
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz
 
   @@index([userId])
   @@index([provider, subject])
@@ -1199,7 +1199,7 @@ model VerificationChallenge {
   /// The address the code was requested from. Recorded so the "reset came from an
   /// unusual IP" rule the product wants can be added without a backfill — there
   /// is nothing enforcing it yet, since there are no debit paths to restrict.
-  ipAddress String   @map("ip_address") @db.Inet
+  ipAddress String @map("ip_address") @db.Inet
 
   /// WHERE the code was mailed, normalised — not to be confused with `ipAddress`,
   /// which is where it was requested FROM.
@@ -1307,7 +1307,7 @@ model BlockedEmail {
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
   /// The admin who added the rule, once there is an admin surface to record one.
   /// Null for seeded rows.
-  createdBy String? @map("created_by") @db.Uuid
+  createdBy String?  @map("created_by") @db.Uuid
 
   @@map("blocked_emails")
   @@schema("identity")
@@ -1358,13 +1358,13 @@ model MailDelivery {
   kind      String @db.VarChar(32)
   subject   String @db.VarChar(256)
 
-  status MailDeliveryStatus
+  status    MailDeliveryStatus
   /// `primary` | `backup`, or null when nothing was dialled.
-  transport String? @db.VarChar(16)
+  transport String?            @db.VarChar(16)
   /// The relay's message id, when it gave one. What a postmaster asks for.
-  messageId String? @map("message_id")
+  messageId String?            @map("message_id")
   /// The relay's literal reply, or the described error. Truncated at 500.
-  response  String? @db.VarChar(500)
+  response  String?            @db.VarChar(500)
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
 
@@ -1403,10 +1403,10 @@ enum MailDeliveryStatus {
 /// authentication requirements. Every update creates a new row with its actor and
 /// timestamp; rollback activates a previous snapshot by copying it into a new row.
 model RateLimitPolicyVersion {
-  id      String @id @db.Uuid
-  version Int    @unique
+  id      String  @id @db.Uuid
+  version Int     @unique
   policy  Json
-  actor   String @db.VarChar(128)
+  actor   String  @db.VarChar(128)
   active  Boolean @default(true)
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
@@ -1922,7 +1922,7 @@ model ChatRegion {
 
 /// Users staff or an admin added to a room they would not otherwise have access to (Module 4).
 model RoomIncludedUser {
-  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  id             String   @id @db.Uuid
   roomId         String   @map("room_id") @db.Uuid
   room           Room     @relation(fields: [roomId], references: [id], onDelete: Cascade)
   userId         String   @map("user_id") @db.Uuid
@@ -1932,6 +1932,7 @@ model RoomIncludedUser {
 
   removedAt DateTime? @map("removed_at") @db.Timestamptz
   removedBy String?   @map("removed_by") @db.Uuid
+
   @@index([userId])
   @@map("room_included_users")
   @@schema("chat")
@@ -1939,15 +1940,17 @@ model RoomIncludedUser {
 
 /// Site owners an admin has barred from a Site-Owner room.
 model RoomExcludedUser {
-  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  roomId    String   @map("room_id") @db.Uuid
-  room      Room     @relation(fields: [roomId], references: [id], onDelete: Cascade)
-  userId    String   @map("user_id") @db.Uuid
-  createdBy String?  @map("created_by") @db.Uuid
-  createdAt DateTime @default(dbgenerated("now()")) @map("created_at") @db.Timestamptz
+  id             String   @id @db.Uuid
+  roomId         String   @map("room_id") @db.Uuid
+  room           Room     @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  userId         String   @map("user_id") @db.Uuid
+  createdBy      String?  @map("created_by") @db.Uuid
+  createdByAdmin String?  @map("created_by_admin") @db.Uuid
+  createdAt      DateTime @default(dbgenerated("now()")) @map("created_at") @db.Timestamptz
 
   removedAt DateTime? @map("removed_at") @db.Timestamptz
   removedBy String?   @map("removed_by") @db.Uuid
+
   @@map("room_excluded_users")
   @@schema("chat")
 }
@@ -2055,17 +2058,17 @@ model ChatSkin {
 }
 
 model UserChatPreference {
-  id               String    @id @db.Uuid
-  userId           String    @unique @map("user_id") @db.Uuid
+  id                     String    @id @db.Uuid
+  userId                 String    @unique @map("user_id") @db.Uuid
   /// The profile-level "hide identity" setting (Chat MAIN). Applied to each message when it is sent.
-  hideIdentity     Boolean   @default(false) @map("hide_identity")
-  activeSkinId     String?   @map("active_cosmetic_id") @db.Uuid
-  activeSkin       ChatSkin? @relation(fields: [activeSkinId], references: [id], onDelete: SetNull, map: "user_chat_preferences_active_cosmetic_id_fkey")
+  hideIdentity           Boolean   @default(false) @map("hide_identity")
+  activeSkinId           String?   @map("active_cosmetic_id") @db.Uuid
+  activeSkin             ChatSkin? @relation(fields: [activeSkinId], references: [id], onDelete: SetNull, map: "user_chat_preferences_active_cosmetic_id_fkey")
   /// "Last online": database time of the user's last disconnect (or connect).
-  lastSeenAt       DateTime? @map("last_seen_at") @db.Timestamptz
+  lastSeenAt             DateTime? @map("last_seen_at") @db.Timestamptz
   /// The room the user last opened, kept on the server so any device reopens it. Cleared if the room is deleted.
-  lastOpenedRoomId String?   @map("last_opened_room_id") @db.Uuid
-  lastOpenedRoom   Room?     @relation(fields: [lastOpenedRoomId], references: [id], onDelete: SetNull, map: "user_chat_preferences_last_opened_room_id_fkey")
+  lastOpenedRoomId       String?   @map("last_opened_room_id") @db.Uuid
+  lastOpenedRoom         Room?     @relation(fields: [lastOpenedRoomId], references: [id], onDelete: SetNull, map: "user_chat_preferences_last_opened_room_id_fkey")
   /// Privacy and notifications (Modules 8–9). NULL = the admin default in the chat settings `privacy` section.
   lastSeenVisibility     String?   @map("last_seen_visibility")
   commonGroupsVisibility String?   @map("common_groups_visibility")
@@ -2092,8 +2095,8 @@ model ChatStaffRole {
   assignedBy String?   @map("assigned_by") @db.Uuid
   assignedAt DateTime  @default(dbgenerated("now()")) @map("assigned_at") @db.Timestamptz
 
-  removedAt  DateTime? @map("removed_at") @db.Timestamptz
-  removedBy  String?   @map("removed_by") @db.Uuid
+  removedAt DateTime? @map("removed_at") @db.Timestamptz
+  removedBy String?   @map("removed_by") @db.Uuid
 
   @@map("staff_roles")
   @@schema("chat")
@@ -2108,26 +2111,26 @@ enum StaffRole {
 }
 
 model UserBan {
-  id          String    @id @db.Uuid
-  userId      String    @map("user_id") @db.Uuid
-  roomId      String?   @map("room_id") @db.Uuid
-  room        Room?     @relation(fields: [roomId], references: [id], onDelete: Restrict)
+  id             String    @id @db.Uuid
+  userId         String    @map("user_id") @db.Uuid
+  roomId         String?   @map("room_id") @db.Uuid
+  room           Room?     @relation(fields: [roomId], references: [id], onDelete: Restrict)
   /// Chat staff (a platform user) who banned; null for admins and auto-moderation.
-  moderatorId String?   @map("moderator_id") @db.Uuid
+  moderatorId    String?   @map("moderator_id") @db.Uuid
   /// Admin-backend admin who banned.
-  adminId     String?   @map("admin_id") @db.Uuid
+  adminId        String?   @map("admin_id") @db.Uuid
   /// What staff and admins write (required): never shown to the user (V2-104). Automatic bans carry the rule's name.
-  internalReason String  @map("internal_reason")
+  internalReason String    @map("internal_reason")
   /// The optional reason the user sees in the notice and in their own list.
-  userReason  String?   @map("user_reason")
-  bannedAt    DateTime  @default(dbgenerated("now()")) @map("banned_at") @db.Timestamptz
+  userReason     String?   @map("user_reason")
+  bannedAt       DateTime  @default(dbgenerated("now()")) @map("banned_at") @db.Timestamptz
   /// Null means permanent.
-  expiresAt   DateTime? @map("expires_at") @db.Timestamptz
-  isActive    Boolean   @default(true) @map("is_active")
-  liftedBy    String?   @map("lifted_by") @db.Uuid
-  liftedAt    DateTime? @map("lifted_at") @db.Timestamptz
+  expiresAt      DateTime? @map("expires_at") @db.Timestamptz
+  isActive       Boolean   @default(true) @map("is_active")
+  liftedBy       String?   @map("lifted_by") @db.Uuid
+  liftedAt       DateTime? @map("lifted_at") @db.Timestamptz
   /// The chat role the issuer had when the ban was given (rank of the ban); null for admins and auto-moderation.
-  moderatorRole String?  @map("moderator_role")
+  moderatorRole  String?   @map("moderator_role")
 
   @@index([userId, roomId, isActive, expiresAt])
   @@map("user_bans")
@@ -2135,47 +2138,49 @@ model UserBan {
 }
 
 model ChatMessageReport {
-  id               String       @id @db.Uuid
+  id                 String       @id @db.Uuid
   /// Null for a report about a user rather than a message.
-  messageId        String?      @map("message_id") @db.Uuid
-  messageCreatedAt DateTime?    @map("message_created_at") @db.Timestamptz
-  message          RoomMessage? @relation(fields: [messageId, messageCreatedAt], references: [id, createdAt], onDelete: Restrict, map: "chat_message_reports_message_fkey")
-  reporterId       String       @map("reporter_id") @db.Uuid
-  reportedUserId   String       @map("reported_user_id") @db.Uuid
-  reason           String
-  reasonRef        ReportReason @relation(fields: [reason], references: [code], onDelete: Restrict)
-  details          String?
-  status           ReportStatus @default(PENDING)
+  messageId          String?      @map("message_id") @db.Uuid
+  messageCreatedAt   DateTime?    @map("message_created_at") @db.Timestamptz
+  message            RoomMessage? @relation(fields: [messageId, messageCreatedAt], references: [id, createdAt], onDelete: Restrict, map: "chat_message_reports_message_fkey")
+  reporterId         String       @map("reporter_id") @db.Uuid
+    reportedUserId     String?      @map("reported_user_id") @db.Uuid
+  reason             String
+  reportType         String       @default("MESSAGE") @map("report_type")
+  reasonRef          ReportReason @relation(fields: [reason, reportType], references: [code, reportType], onDelete: Restrict, map: "chat_message_reports_reason_report_type_fkey")
+  details            String?
+  status             ReportStatus @default(PENDING)
   /// DISMISS, WARN, BAN or RETRACT_MESSAGE once resolved.
-  action           String?
-  resolvedBy       String?      @map("resolved_by") @db.Uuid
-  resolvedAt       DateTime?    @map("resolved_at") @db.Timestamptz
-  createdAt        DateTime     @default(dbgenerated("now()")) @map("created_at") @db.Timestamptz
+  action             String?
+  resolvedBy         String?      @map("resolved_by") @db.Uuid
+  resolvedAt         DateTime?    @map("resolved_at") @db.Timestamptz
+  createdAt          DateTime     @default(dbgenerated("now()")) @map("created_at") @db.Timestamptz
   /// A report about a direct or group message (Module 8).
-  dmMessageId      String?      @map("dm_message_id") @db.Uuid
+  dmMessageId        String?      @map("dm_message_id") @db.Uuid
   /// With dmMessageId: the message's partition key. No foreign key: old months are detached into chat_archive.
-  dmMessageCreatedAt DateTime?  @map("dm_message_created_at") @db.Timestamptz
+  dmMessageCreatedAt DateTime?    @map("dm_message_created_at") @db.Timestamptz
 
+  @@unique([dmMessageId, reporterId], map: "chat_message_reports_dm_message_reporter_key")
   @@index([messageId])
   @@index([reporterId, createdAt])
   @@index([reportedUserId])
   @@index([status])
-  @@unique([dmMessageId, reporterId], map: "chat_message_reports_dm_message_reporter_key")
   @@map("chat_message_reports")
   @@schema("chat")
 }
 
 /// The reason list users pick from; the admin edits it.
 model ReportReason {
-  code      String  @id
-  label     String
-  isActive  Boolean @default(true) @map("is_active")
-  sortOrder Int     @default(0) @map("sort_order")
+  code       String
+  label      String
+  isActive   Boolean @default(true) @map("is_active")
+  sortOrder  Int     @default(0) @map("sort_order")
   /// 'MESSAGE' (Chat Messages or Requests) or 'USER' (User Profile): each report type has its own list (FR-250).
-  reportType String @default("MESSAGE") @map("report_type")
+  reportType String  @default("MESSAGE") @map("report_type")
 
   reports ChatMessageReport[]
 
+  @@id([code, reportType], map: "report_reasons_pkey")
   @@map("report_reasons")
   @@schema("chat")
 }
@@ -2336,8 +2341,8 @@ model ChatUserRestriction {
   commands       String[]  @default([])
   roomId         String?   @map("room_id") @db.Uuid
   room           Room?     @relation(fields: [roomId], references: [id], onDelete: Restrict)
-  internalReason String @map("internal_reason")
-  userReason     String? @map("user_reason")
+  internalReason String    @map("internal_reason")
+  userReason     String?   @map("user_reason")
   /// Chat staff (a platform user) who restricted; null for admins.
   createdBy      String?   @map("created_by") @db.Uuid
   createdByAdmin String?   @map("created_by_admin") @db.Uuid
@@ -2388,13 +2393,14 @@ model ChatStaffRequest {
 
 /// /mute: the user no longer sees the target's public messages; DMs still work (Chat SETTINGS "/mute").
 model UserMute {
-  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  id        String   @id @db.Uuid
   userId    String   @map("user_id") @db.Uuid
   targetId  String   @map("target_id") @db.Uuid
   createdAt DateTime @default(dbgenerated("now()")) @map("created_at") @db.Timestamptz
 
   removedAt DateTime? @map("removed_at") @db.Timestamptz
   removedBy String?   @map("removed_by") @db.Uuid
+
   @@index([targetId])
   @@map("user_mutes")
   @@schema("chat")
@@ -2402,13 +2408,14 @@ model UserMute {
 
 /// /block: the user no longer sees the target's public messages, and the two cannot DM or gift each other.
 model UserBlock {
-  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  id        String   @id @db.Uuid
   userId    String   @map("user_id") @db.Uuid
   targetId  String   @map("target_id") @db.Uuid
   createdAt DateTime @default(dbgenerated("now()")) @map("created_at") @db.Timestamptz
 
   removedAt DateTime? @map("removed_at") @db.Timestamptz
   removedBy String?   @map("removed_by") @db.Uuid
+
   @@index([targetId])
   @@map("user_blocks")
   @@schema("chat")
@@ -2435,44 +2442,44 @@ model ChatCommandLog {
 
 /// A chat ad (/ad or the admin panel). Never deleted: a cancelled or refunded ad keeps its row.
 model ChatAd {
-  id              String    @id @db.Uuid
+  id                 String    @id @db.Uuid
   /// The advertiser (a platform user), or null for an admin's ad.
-  creatorId       String?   @map("creator_id") @db.Uuid
-  creatorAdminId  String?   @map("creator_admin_id") @db.Uuid
-  content         String
-  roomIds         String[]  @map("room_ids") @db.Uuid
-  allRooms        Boolean   @default(false) @map("all_rooms")
+  creatorId          String?   @map("creator_id") @db.Uuid
+  creatorAdminId     String?   @map("creator_admin_id") @db.Uuid
+  content            String
+  roomIds            String[]  @map("room_ids") @db.Uuid
+  allRooms           Boolean   @default(false) @map("all_rooms")
   /// Pinned ads only: minutes on top of each room.
-  pinMinutes      Int?      @map("pin_minutes")
+  pinMinutes         Int?      @map("pin_minutes")
   /// Extra posts after the first; 0 = posted once.
-  repeatCount     Int       @default(0) @map("repeat_count")
-  repeatGapMin    Int?      @map("repeat_gap_min")
-  postedCount     Int       @default(0) @map("posted_count")
+  repeatCount        Int       @default(0) @map("repeat_count")
+  repeatGapMin       Int?      @map("repeat_gap_min")
+  postedCount        Int       @default(0) @map("posted_count")
   /// Database time of the next repeat; null when nothing is left to post.
-  nextPostAt      DateTime? @map("next_post_at") @db.Timestamptz
+  nextPostAt         DateTime? @map("next_post_at") @db.Timestamptz
   /// "GEO Targeting: Hide ad from specific country users".
-  hiddenCountries String[]  @default([]) @map("hidden_countries")
-  badgeId         String?   @map("badge_id")
+  hiddenCountries    String[]  @default([]) @map("hidden_countries")
+  badgeId            String?   @map("badge_id")
   /// USD, 8 decimals.
-  priceUsd        Decimal   @default(0) @map("price_usd") @db.Decimal(18, 8)
-  breakdown       Json      @default("[]")
-  chargeReference String?   @map("charge_reference")
+  priceUsd           Decimal   @default(0) @map("price_usd") @db.Decimal(18, 8)
+  breakdown          Json      @default("[]")
+  chargeReference    String?   @map("charge_reference")
   /// ACTIVE, PAUSED, COMPLETED, CANCELLED or REFUNDED.
-  status          String    @default("ACTIVE")
-  createdAt       DateTime  @default(dbgenerated("now()")) @map("created_at") @db.Timestamptz
-  endedAt         DateTime? @map("ended_at") @db.Timestamptz
-  cancelledBy     String?   @map("cancelled_by") @db.Uuid
-  cancelNote      String?   @map("cancel_note")
+  status             String    @default("ACTIVE")
+  createdAt          DateTime  @default(dbgenerated("now()")) @map("created_at") @db.Timestamptz
+  endedAt            DateTime? @map("ended_at") @db.Timestamptz
+  cancelledBy        String?   @map("cancelled_by") @db.Uuid
+  cancelNote         String?   @map("cancel_note")
   /// USD to give back for unused posts and pinned minutes; refundedAt is set once the payment module returned it.
-  refundUsd       Decimal?  @map("refund_usd") @db.Decimal(18, 8)
-  refundedAt      DateTime? @map("refunded_at") @db.Timestamptz
+  refundUsd          Decimal?  @map("refund_usd") @db.Decimal(18, 8)
+  refundedAt         DateTime? @map("refunded_at") @db.Timestamptz
   /// "Ad Skins": the skin chosen from the ads settings.
-  skinId           String?   @map("skin_id")
+  skinId             String?   @map("skin_id")
   /// EXP and universal currency the advertiser earned ("Universal Currency and EXP").
-  rewards          Json      @default("{}")
+  rewards            Json      @default("{}")
   /// An admin revert asked for the rewards to be taken back; rewardsRevokedAt is set once done.
-  revertRewards    Boolean   @default(false) @map("revert_rewards")
-  rewardsRevokedAt DateTime? @map("rewards_revoked_at") @db.Timestamptz
+  revertRewards      Boolean   @default(false) @map("revert_rewards")
+  rewardsRevokedAt   DateTime? @map("rewards_revoked_at") @db.Timestamptz
   /// The advertiser's key for this purchase (unique per advertiser) and a fingerprint of what it asked for.
   idempotencyKey     String?   @map("idempotency_key")
   requestFingerprint String?   @map("request_fingerprint")
@@ -2501,16 +2508,17 @@ model ChatAd {
 
 /// One pinned slot of one ad in one room: QUEUED → ACTIVE → DONE (or CANCELLED).
 model ChatAdPlacement {
-  id        String    @id @db.Uuid
-  adId      String    @map("ad_id") @db.Uuid
-  ad        ChatAd    @relation(fields: [adId], references: [id], onDelete: Restrict)
-  roomId    String    @map("room_id") @db.Uuid
-  room      Room      @relation(fields: [roomId], references: [id], onDelete: Restrict)
-  minutes   Int
-  status    String    @default("QUEUED")
-  startsAt  DateTime? @map("starts_at") @db.Timestamptz
-  endsAt    DateTime? @map("ends_at") @db.Timestamptz
-  createdAt DateTime  @default(dbgenerated("now()")) @map("created_at") @db.Timestamptz
+  id              String    @id @db.Uuid
+  adId            String    @map("ad_id") @db.Uuid
+  ad              ChatAd    @relation(fields: [adId], references: [id], onDelete: Restrict)
+  roomId          String    @map("room_id") @db.Uuid
+  room            Room      @relation(fields: [roomId], references: [id], onDelete: Restrict)
+  minutes         Int
+  durationSeconds Int       @map("duration_seconds")
+  status          String    @default("QUEUED")
+  startsAt        DateTime? @map("starts_at") @db.Timestamptz
+  endsAt          DateTime? @map("ends_at") @db.Timestamptz
+  createdAt       DateTime  @default(dbgenerated("now()")) @map("created_at") @db.Timestamptz
 
   @@index([roomId, status, createdAt])
   @@index([adId])
@@ -2520,15 +2528,15 @@ model ChatAdPlacement {
 
 /// A warning for a group (Premium, KYC or a level): one rule that a user's warnings list evaluates, never one row per user.
 model GroupWarning {
-  id           String   @id @db.Uuid
-  targetType   String   @map("target_type")
-  targetValue  String   @map("target_value")
-  roomId       String?  @map("room_id") @db.Uuid
-  internalReason String @map("internal_reason")
-  userReason   String?  @map("user_reason")
-  issuedBy     String   @map("issued_by") @db.Uuid
-  issuedByRole String   @map("issued_by_role")
-  createdAt    DateTime @default(dbgenerated("now()")) @map("created_at") @db.Timestamptz
+  id             String   @id @db.Uuid
+  targetType     String   @map("target_type")
+  targetValue    String   @map("target_value")
+  roomId         String?  @map("room_id") @db.Uuid
+  internalReason String   @map("internal_reason")
+  userReason     String?  @map("user_reason")
+  issuedBy       String   @map("issued_by") @db.Uuid
+  issuedByRole   String   @map("issued_by_role")
+  createdAt      DateTime @default(dbgenerated("now()")) @map("created_at") @db.Timestamptz
 
   @@index([createdAt(sort: Desc), id(sort: Desc)])
   @@map("group_warnings")
@@ -2616,18 +2624,18 @@ model ChatMoneyRevertJob {
 
 /// A direct (two people) or group conversation.
 model DmConversation {
-  id            String    @id @db.Uuid
+  id                  String    @id @db.Uuid
   /// DIRECT or GROUP.
-  kind          String
+  kind                String
   /// DIRECT only: the two user ids in order, so a pair has one conversation.
-  directKey     String?   @unique @map("direct_key")
+  directKey           String?   @unique @map("direct_key")
   /// DIRECT with a site owner only: the merchant's app the chat was opened from ("sorted separately by apps").
-  merchantAppId String?   @map("merchant_app_id")
-  createdBy     String    @map("created_by") @db.Uuid
-  createdAt     DateTime  @default(dbgenerated("now()")) @map("created_at") @db.Timestamptz
-  lastMessageAt DateTime? @map("last_message_at") @db.Timestamptz
+  merchantAppId       String?   @map("merchant_app_id")
+  createdBy           String    @map("created_by") @db.Uuid
+  createdAt           DateTime  @default(dbgenerated("now()")) @map("created_at") @db.Timestamptz
+  lastMessageAt       DateTime? @map("last_message_at") @db.Timestamptz
   /// DIRECT only: whether the other person followed the starter when the chat began (new-DM limits are counted per kind).
-  startedWithFollower Boolean? @map("started_with_follower")
+  startedWithFollower Boolean?  @map("started_with_follower")
 
   members  DmMember[]
   messages DmMessage[]
@@ -2733,30 +2741,30 @@ model DmMessage {
 
 /// The group of a GROUP conversation.
 model DmGroup {
-  conversationId String         @id @map("conversation_id") @db.Uuid
-  conversation   DmConversation @relation(fields: [conversationId], references: [id], onDelete: Restrict)
-  name           String
-  description    String?
-  logoUrl        String?        @map("logo_url")
+  conversationId  String         @id @map("conversation_id") @db.Uuid
+  conversation    DmConversation @relation(fields: [conversationId], references: [id], onDelete: Restrict)
+  name            String
+  description     String?
+  logoUrl         String?        @map("logo_url")
   /// PUBLIC (anyone may join) or PRIVATE (invite only).
-  visibility     String
-  ownerId        String         @map("owner_id") @db.Uuid
+  visibility      String
+  ownerId         String         @map("owner_id") @db.Uuid
   /// Counts against the creator's limit whatever the type becomes.
-  creatorId      String         @map("creator_id") @db.Uuid
-  createdPublic  Boolean        @map("created_public")
-  membersCanText Boolean        @default(true) @map("members_can_text")
+  creatorId       String         @map("creator_id") @db.Uuid
+  createdPublic   Boolean        @map("created_public")
+  membersCanText  Boolean        @default(true) @map("members_can_text")
   /// A channel: only admins post; public or private.
-  isChannel      Boolean        @default(false) @map("is_channel")
+  isChannel       Boolean        @default(false) @map("is_channel")
   /// The lowest role allowed each delegable action, e.g. { "RENAME": "ADMIN" }.
-  permissions    Json           @default("{}")
+  permissions     Json           @default("{}")
   /// The permissions the owner lets group admins change (V2-49).
-  adminManageable Json          @default("[]") @map("admin_manageable")
+  adminManageable Json           @default("[]") @map("admin_manageable")
   /// Set when the last member left; the group and its messages are kept.
-  closedAt       DateTime?      @map("closed_at") @db.Timestamptz
+  closedAt        DateTime?      @map("closed_at") @db.Timestamptz
   /// Active members, kept by a trigger on dm_members.
-  memberCount    Int            @default(0) @map("member_count")
-  createdAt      DateTime       @default(dbgenerated("now()")) @map("created_at") @db.Timestamptz
-  updatedAt      DateTime       @default(dbgenerated("now()")) @map("updated_at") @db.Timestamptz
+  memberCount     Int            @default(0) @map("member_count")
+  createdAt       DateTime       @default(dbgenerated("now()")) @map("created_at") @db.Timestamptz
+  updatedAt       DateTime       @default(dbgenerated("now()")) @map("updated_at") @db.Timestamptz
 
   invites   DmGroupInvite[]
   bans      DmGroupBan[]
@@ -2774,7 +2782,7 @@ model DmGroupInvite {
   group          DmGroup   @relation(fields: [conversationId], references: [conversationId], onDelete: Restrict)
   inviterId      String    @map("inviter_id") @db.Uuid
   inviteeId      String    @map("invitee_id") @db.Uuid
-  /// PENDING, ACCEPTED, DECLINED or REVOKED.
+  /// PENDING, ACCEPTED, DECLINED, REVOKED or EXPIRED.
   status         String    @default("PENDING")
   createdAt      DateTime  @default(dbgenerated("now()")) @map("created_at") @db.Timestamptz
   respondedAt    DateTime? @map("responded_at") @db.Timestamptz
@@ -2789,7 +2797,7 @@ model DmGroupInvite {
 }
 
 model DmGroupBan {
-  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  id             String   @id @db.Uuid
   conversationId String   @map("conversation_id") @db.Uuid
   group          DmGroup  @relation(fields: [conversationId], references: [conversationId], onDelete: Restrict)
   userId         String   @map("user_id") @db.Uuid
@@ -2801,6 +2809,7 @@ model DmGroupBan {
 
   removedAt DateTime? @map("removed_at") @db.Timestamptz
   removedBy String?   @map("removed_by") @db.Uuid
+
   @@map("dm_group_bans")
   @@schema("chat")
 }

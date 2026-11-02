@@ -2,6 +2,8 @@
  * Database access for the admin oversight of direct messages and groups (Modules 8 and 9).
  */
 import { Prisma } from '@prisma/client';
+import { ERR } from '../../../contracts';
+import { ProblemException } from '../../../http';
 import type { PrismaService } from '../../../../db/client';
 
 export const iso = (value: Date | null | undefined): string | null =>
@@ -12,8 +14,14 @@ export const encodeCursor = (time: string, id: string): string => Buffer.from(`$
 
 export function decodeCursor(cursor: string | null): { time: string; id: string } | null {
   if (!cursor) return null;
-  const [time, id] = Buffer.from(cursor, 'base64url').toString('utf8').split('|');
-  return time && id && /^[0-9a-f-]{36}$/i.test(id) && !Number.isNaN(Date.parse(time)) ? { time, id } : null;
+  const invalid = (): never => { throw new ProblemException({ type: ERR.VALIDATION_FAILED, detail: 'Invalid cursor' }); };
+  if (cursor.length > 512 || !/^[A-Za-z0-9_-]+$/.test(cursor)) return invalid();
+  let decoded: string;
+  try { decoded = Buffer.from(cursor, 'base64url').toString('utf8'); } catch { return invalid(); }
+  const [time, id, ...extra] = decoded.split('|');
+  if (!time || !id || extra.length || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id) || Number.isNaN(Date.parse(time))) return invalid();
+  if (Buffer.from(decoded).toString('base64url') !== cursor) return invalid();
+  return { time, id };
 }
 
 export const TEXT_TIME = (column: string): Prisma.Sql =>

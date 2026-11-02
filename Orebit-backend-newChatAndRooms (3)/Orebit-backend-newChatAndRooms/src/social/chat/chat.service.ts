@@ -220,7 +220,7 @@ export class ChatService {
       });
     const { room, dbNow } = read;
 
-    await this.moderation.assertNotBanned(user.id, room.id, dbNow);
+    await this.moderation.assertNotBanned(user, room.id, dbNow);
 
     const facts = await this.access.factsFor(user);
     const settings = await this.access.settingsFor(user);
@@ -341,6 +341,7 @@ export class ChatService {
     user: ChatUserContext,
     messageId: string,
     note: string | null,
+    reportId?: string,
   ): Promise<{ messageId: string; roomId: string; retractedAt: string } | StaffRequested> {
     const message = await this.db.messageById(messageId);
     if (!message)
@@ -395,14 +396,14 @@ export class ChatService {
       return this.gate.report(user, 'DELETE_MESSAGES', {
         targetUserId: message.userId,
         targetRoomId: message.roomId,
-        payload: { messageId },
+        payload: { messageId, ...(reportId ? { reportId } : {}) },
         note: note ?? 'Please remove this message',
       });
     }
 
     const dbNow = await this.db.dbNow();
     if (isAuthor && !staff) {
-      await this.moderation.assertNotBanned(user.id, message.roomId, dbNow);
+      await this.moderation.assertNotBanned(user, message.roomId, dbNow);
       const window = (await this.access.settingsFor(user)).limits.retractWindowSeconds;
       if (window > 0 && dbNow.getTime() - message.createdAt.getTime() > window * 1000) {
         throw refuse(
@@ -465,6 +466,7 @@ export class ChatService {
       | 'RAIN',
     text: string,
     roomRef: string = constants.GLOBAL_ROOM_ID,
+    taggedUserIds: readonly string[] = [],
   ): Promise<MessageRow> {
     const room = await this.access.requireRoom(roomRef);
     const botId = (await this.gate.settings()).bot.profileUserId;
@@ -479,7 +481,7 @@ export class ChatService {
         alertType,
         ...(bot ? { bot: { userId: bot.id, username: bot.username } } : {}),
       },
-      taggedUserIds: [],
+      taggedUserIds: [...new Set(taggedUserIds)],
     });
     this.bus.publish({ kind: 'alert', messageIds: [row.id] });
     return row;

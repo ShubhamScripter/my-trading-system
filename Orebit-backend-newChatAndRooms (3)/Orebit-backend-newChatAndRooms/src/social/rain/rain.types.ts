@@ -1,6 +1,6 @@
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../db/client';
-import { type RainRevertFilter } from './rain.contract';
+import { type ManualSystemRain, type RainRevertFilter } from './rain.contract';
 import type { RecipientRule } from './rain.math';
 
 export type Db = Prisma.TransactionClient | PrismaService;
@@ -85,6 +85,7 @@ export interface RainJobRow {
   payerRefund: 'REFUND' | 'NONE';
   shortfall: 'ZERO' | 'NEGATIVE';
   filter: RainRevertFilter | null;
+  manualSystem: ManualSystemRain | null;
 }
 
 export interface RainRepeatRow {
@@ -113,9 +114,9 @@ export interface RainHistoryRow {
   roomId: string;
   initiator: string | null;
   currency: string;
-  potMinor: bigint;
-  feeMinor: bigint;
-  usdValueMinor: bigint | null;
+  potMinor: string;
+  feeMinor: string;
+  usdValueMinor: string | null;
   recipientCount: number;
   messageId: string | null;
   createdAt: string;

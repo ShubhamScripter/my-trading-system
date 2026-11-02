@@ -1,4 +1,4 @@
-// Database access for group invites (Module 9, ): one pending invite per person and group (the unique index
+// Database access for group invites (Module 9): one pending invite per person and group (the unique index
 // decides a race), an expiry, a pending cap per person and a limit per inviter and window, checked under one lock
 // per inviter.
 import { Injectable } from '@nestjs/common';
@@ -49,20 +49,22 @@ export class DmGroupInvitesDbOperation {
     inviterId: string,
     inviteeId: string,
     limits: { perWindow: number; windowHours: number; pendingPerPerson: number; expiryHours: number },
-  ): Promise<{ inviteId: string } | { refused: 'window_limit' | 'pending_cap' }> {
+  ): Promise<{ inviteId: string; created: boolean } | { refused: 'window_limit' | 'pending_cap' }> {
     return this.prisma.$transaction(async (tx) => {
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`invite:${inviterId}`}, 0))`;
       await tx.$executeRaw`
-        UPDATE chat.dm_group_invites SET status = 'REVOKED', responded_at = now()
+        UPDATE chat.dm_group_invites SET status = 'EXPIRED', responded_at = now()
         WHERE invitee_id = ${inviteeId}::uuid AND status = 'PENDING' AND expires_at IS NOT NULL AND expires_at <= now()
       `;
       const existing = await tx.$queryRaw<{ id: string }[]>`
         SELECT id FROM chat.dm_group_invites
         WHERE conversation_id = ${conversationId}::uuid AND invitee_id = ${inviteeId}::uuid AND status = 'PENDING'
       `;
-      if (existing[0]) return { inviteId: existing[0].id };
+      if (existing[0]) return { inviteId: existing[0].id, created: false };
       const pending = await tx.$queryRaw<{ n: number }[]>`
-        SELECT count(*)::int AS n FROM chat.dm_group_invites WHERE invitee_id = ${inviteeId}::uuid AND status = 'PENDING'
+        SELECT count(*)::int AS n FROM chat.dm_group_invites i
+        JOIN chat.dm_groups g ON g.conversation_id = i.conversation_id AND g.closed_at IS NULL
+        WHERE i.invitee_id = ${inviteeId}::uuid AND i.status = 'PENDING'
       `;
       if ((pending[0]?.n ?? 0) >= limits.pendingPerPerson) return { refused: 'pending_cap' as const };
       const sent = await tx.$queryRaw<{ n: number }[]>`
@@ -76,7 +78,7 @@ export class DmGroupInvitesDbOperation {
         VALUES (${id}::uuid, ${conversationId}::uuid, ${inviterId}::uuid, ${inviteeId}::uuid,
                 now() + make_interval(hours => ${limits.expiryHours}::int))
       `;
-      return { inviteId: id };
+      return { inviteId: id, created: true };
     });
   }
 

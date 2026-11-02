@@ -276,6 +276,9 @@ export const dmSection = {
   strangerMessageCap: limit(1, 1000),
   merchantMessageCap: limit(1, 1000),
   typingEverySeconds: limit(1, 60),
+  membershipNoticeWindowSeconds: limit(1, 3600),
+  searchMinLength: limit(1, 100),
+  searchMaxLength: limit(1, 500),
   maxPinnedPeople: limit(0, 100),
   maxPinnedMessages: limit(0, 100),
 };
@@ -288,6 +291,9 @@ const DM_REQUIRED = [
   'strangerMessageCap',
   'merchantMessageCap',
   'typingEverySeconds',
+  'membershipNoticeWindowSeconds',
+  'searchMinLength',
+  'searchMaxLength',
   'maxPinnedPeople',
   'maxPinnedMessages',
 ] as const;

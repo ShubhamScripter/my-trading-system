@@ -105,34 +105,48 @@ export class ChatSettingsService {
     const result = { settings: false, roomIds: [] as string[] };
     await this.db.transaction(async (tx) => {
       for (const change of await this.db.dueChanges(tx)) {
-        if (change.target === 'SETTINGS') {
-          const patch = SettingsPatchSchema.safeParse(change.patch);
-          const currentDocument = await this.db.lockSettingsDocument(tx);
-          const before = ChatSettingsDocumentSchema.safeParse(currentDocument);
-          const next =
-            patch.success && before.success
-              ? ChatSettingsDocumentSchema.safeParse(applySettingsPatch(before.data, patch.data))
-              : null;
-          if (!next?.success) {
-            await this.db.cancelChange(tx, change.id);
-            this.logger.error(
-              { component: 'ChatSettingsService', changeId: change.id },
-              'scheduled settings change is invalid; cancelled',
-            );
-            continue;
+        await this.db.savepoint(tx);
+        try {
+          if (change.target === 'SETTINGS') {
+            const patch = SettingsPatchSchema.safeParse(change.patch);
+            const currentDocument = await this.db.lockSettingsDocument(tx);
+            const before = ChatSettingsDocumentSchema.safeParse(currentDocument);
+            const next =
+              patch.success && before.success
+                ? ChatSettingsDocumentSchema.safeParse(applySettingsPatch(before.data, patch.data))
+                : null;
+            if (!next?.success) {
+              await this.db.cancelChange(tx, change.id);
+              this.logger.error(
+                { component: 'ChatSettingsService', changeId: change.id },
+                'scheduled settings change is invalid; cancelled',
+              );
+              await this.db.releaseSavepoint(tx);
+              continue;
+            }
+            await this.db.writeSettingsDocument(tx, next.data, change.actor_id);
+            await this.db.finishChange(tx, change.id, currentDocument);
+            result.settings = true;
+          } else if (change.target === 'ROOM' && change.room_id) {
+            const patch = RoomPatchSchema.safeParse(change.patch);
+            if (!patch.success) {
+              await this.db.cancelChange(tx, change.id);
+              await this.db.releaseSavepoint(tx);
+              continue;
+            }
+            const before = await this.db.applyRoomPatch(tx, change.room_id, patch.data);
+            await this.db.finishChange(tx, change.id, before);
+            if (before !== null) result.roomIds.push(change.room_id);
           }
-          await this.db.writeSettingsDocument(tx, next.data, change.actor_id);
-          await this.db.finishChange(tx, change.id, currentDocument);
-          result.settings = true;
-        } else if (change.target === 'ROOM' && change.room_id) {
-          const patch = RoomPatchSchema.safeParse(change.patch);
-          if (!patch.success) {
-            await this.db.cancelChange(tx, change.id);
-            continue;
-          }
-          const before = await this.db.applyRoomPatch(tx, change.room_id, patch.data);
-          await this.db.finishChange(tx, change.id, before);
-          if (before !== null) result.roomIds.push(change.room_id);
+          await this.db.releaseSavepoint(tx);
+        } catch (err: unknown) {
+          await this.db.rollbackSavepoint(tx);
+          await this.db.cancelChange(tx, change.id);
+          await this.db.releaseSavepoint(tx);
+          this.logger.error(
+            { component: 'ChatSettingsService', changeId: change.id, target: change.target, err },
+            'scheduled change failed and was cancelled; later changes will continue',
+          );
         }
       }
     });

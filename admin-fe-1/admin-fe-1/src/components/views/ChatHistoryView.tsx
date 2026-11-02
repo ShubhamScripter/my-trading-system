@@ -241,7 +241,7 @@ export const ChatHistoryView: React.FC<ChatHistoryViewProps> = ({
               )}
             </div>
             <p style={{ margin: '3px 0 0', fontSize: '12px', color: 'var(--text-muted)' }}>
-              {(selectedRoom?.messageCount ?? messages.length).toLocaleString()} total messages in room &bull; {roomUsers.length} active chatters
+              {messages.length.toLocaleString()} messages loaded &bull; {roomUsers.length} active chatters
             </p>
           </div>
         </div>

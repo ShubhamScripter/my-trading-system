@@ -117,7 +117,7 @@ export class ChatChangeHandler {
       const room = await this.access.findRoom(roomId);
       const access = room ? await this.access.evaluate(socket.data.user, room) : null;
       if (!room || !access?.isEligibleToView) {
-        this.rooms.leave(socket);
+        await this.rooms.leave(socket);
         socket.emit(SERVER_EVENTS.ROOM_ACCESS, {
           status: 'removed',
           roomId,
@@ -147,18 +147,24 @@ export class ChatChangeHandler {
 // user's remembered last room. Used by the gateway and by the change handler.
 
 export class ChatSocketRooms {
+  private readonly chains = new WeakMap<ChatSocket, Promise<unknown>>();
+
   constructor(
     private readonly presence: ChatPresenceService,
     private readonly delivery: ChatDelivery,
   ) {}
 
   async enter(socket: ChatSocket, room: RoomRecord, access: RoomAccessEvaluation): Promise<void> {
+    await this.serialize(socket, () => this.enterNow(socket, room, access));
+  }
+
+  private async enterNow(socket: ChatSocket, room: RoomRecord, access: RoomAccessEvaluation): Promise<void> {
     const userId = socket.data.user.id;
     const previousRoomId = socket.data.roomId;
     const isSameRoom = previousRoomId === room.id;
 
     if (previousRoomId && !isSameRoom) {
-      this.leave(socket);
+      await this.leaveNow(socket);
     }
 
     if (isSameRoom) {
@@ -184,17 +190,30 @@ export class ChatSocketRooms {
   }
 
   // Takes the socket out of its current room, if it is in one, and forgets its access to it.
-  leave(socket: ChatSocket): void {
+  leave(socket: ChatSocket): Promise<void> {
+    return this.serialize(socket, () => this.leaveNow(socket));
+  }
+
+  private async leaveNow(socket: ChatSocket): Promise<void> {
     const roomId = socket.data.roomId;
     if (!roomId) return;
 
-    void socket.leave(socketRoom(roomId));
-    void socket.leave(promoRoom(roomId));
-    if (socket.data.country) void socket.leave(countryRoom(roomId, socket.data.country));
+    await Promise.all([
+      socket.leave(socketRoom(roomId)),
+      socket.leave(promoRoom(roomId)),
+      ...(socket.data.country ? [socket.leave(countryRoom(roomId, socket.data.country))] : []),
+    ]);
     this.presence.leaveRoom(roomId, socket.data.user.id);
 
     socket.data.roomId = null;
     socket.data.access = null;
     this.delivery.scheduleCount(roomId);
+  }
+
+  private serialize<T>(socket: ChatSocket, operation: () => Promise<T>): Promise<T> {
+    const previous = this.chains.get(socket) ?? Promise.resolve();
+    const current = previous.catch(() => undefined).then(operation);
+    this.chains.set(socket, current);
+    return current;
   }
 }

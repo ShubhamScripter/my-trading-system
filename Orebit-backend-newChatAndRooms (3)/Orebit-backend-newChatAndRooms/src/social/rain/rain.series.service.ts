@@ -112,7 +112,8 @@ export class RainSeriesService {
         await this.db.tx(async (tx) => {
           await this.wallet.ensurePayer(tx, repeat.initiatorId, repeat.currency);
           await this.wallet.apply(tx, this.payout.legsOf(run, repeat.initiatorId), repeat.currency);
-          await this.db.insertRun(tx, run);
+          await this.db.insertRun(tx, { ...run, recipientCount: run.shares.length });
+          await this.db.insertShares(tx, run.id, run.shares);
         });
         await this.audit('SYSTEM', repeat.initiatorId, 'REPEAT_PAID', run.id, null);
         await this.payout.afterPaid((await this.db.findByKey(key))!);

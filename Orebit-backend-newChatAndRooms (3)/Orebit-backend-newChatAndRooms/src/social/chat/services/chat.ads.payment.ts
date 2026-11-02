@@ -85,7 +85,7 @@ export class ChatAdsPaymentService {
           discountUsd: plan.discountUsd ?? null,
         });
         if (plan.pinMinutes !== null) {
-          for (const room of plan.rooms) await enqueuePin(tx, adId, room.id, plan.pinMinutes);
+          for (const room of plan.rooms) await enqueuePin(tx, adId, room.id, plan.pinMinutes * 60);
         }
       });
     } catch (err: unknown) {
@@ -133,7 +133,19 @@ export class ChatAdsPaymentService {
       });
     }
     const activatedNow = await this.ads.activate(ad.id, paid.reference);
-    return { ad: (await this.ads.adById(ad.id))!, activatedNow };
+    const current = (await this.ads.adById(ad.id))!;
+    if (!activatedNow && current.status === 'FAILED') {
+      await this.ads.recordLateChargeRefund(ad.id, paid.reference, ad.priceUsd);
+      this.logger.error({ component: 'ChatAdsPaymentService', adId: ad.id }, 'late charge recorded for refund');
+      throw refuse(
+        ERR.FORBIDDEN,
+        CHAT_REFUSAL_REASONS.PAYMENT_FAILED,
+        'The ad expired during payment; the charge is being refunded',
+        { adId: ad.id },
+        409,
+      );
+    }
+    return { ad: current, activatedNow };
   }
 
   // Reconciles ads left PENDING_PAYMENT: asks the Charge port what happened to each and finishes it. Returns the ads

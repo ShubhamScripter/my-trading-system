@@ -44,11 +44,12 @@ export class RainRevertDbOperation {
   async takeShares(
     tx: Db,
     rainId: string,
-    userIds: readonly string[],
+    userIds: readonly string[] | null,
   ): Promise<{ userId: string; amount: bigint; previouslyReversed: boolean }[]> {
+    const selectedUsers = userIds === null ? Prisma.empty : Prisma.sql`AND user_id = ANY(${[...userIds]}::uuid[])`;
     const rows = await tx.$queryRaw<{ user_id: string; amount_minor: bigint; reversed_at: Date | null }[]>`
       SELECT user_id, amount_minor, reversed_at FROM rain.recipients
-      WHERE rain_id = ${rainId}::uuid AND user_id = ANY(${[...userIds]}::uuid[])
+      WHERE rain_id = ${rainId}::uuid AND reversed_at IS NULL ${selectedUsers}
       FOR UPDATE
     `;
     return rows.map((row) => ({
@@ -58,12 +59,12 @@ export class RainRevertDbOperation {
     }));
   }
 
-  async setReclaimed(tx: Db, rainId: string, reclaimed: ReadonlyMap<string, bigint>): Promise<void> {
+  async setReclaimed(tx: Db, rainId: string, reclaimed: ReadonlyMap<string, bigint>, jobId: string): Promise<void> {
     for (const [userId, amount] of reclaimed) {
       await tx.$executeRaw`
         UPDATE rain.recipients
-        SET reclaimed_minor = ${amount.toString()}::bigint, reversed_at = now()
-        WHERE rain_id = ${rainId}::uuid AND user_id = ${userId}::uuid
+        SET reclaimed_minor = ${amount.toString()}::bigint, reversed_at = now(), reversed_job_id = ${jobId}::uuid
+        WHERE rain_id = ${rainId}::uuid AND user_id = ${userId}::uuid AND reversed_at IS NULL
       `;
     }
   }

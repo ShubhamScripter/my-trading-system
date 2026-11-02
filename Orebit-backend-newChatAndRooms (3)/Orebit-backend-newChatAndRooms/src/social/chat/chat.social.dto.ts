@@ -123,7 +123,9 @@ export class StaffRulesDto extends WithNote {
 }
 
 export class StaffRoomAccessDto extends WithNote {
-  @Matches(UUID_SHAPE, { message: 'userId must be a UUID' })
+  @Transform(trim)
+  @IsString()
+  @Length(1, 64)
   userId!: string;
 
   // ADD lets the user in whatever the room's gates say; REMOVE shuts them out; RESTORE undoes either.
@@ -241,7 +243,9 @@ export class ReportActionDto extends WithNote {
 
 export class PenaltiesQueryDto {
   @IsOptional()
-  @Matches(UUID_SHAPE, { message: 'userId must be a UUID' })
+  @Transform(trim)
+  @IsString()
+  @Length(1, 64)
   userId?: string;
 
   @IsOptional()
@@ -251,11 +255,16 @@ export class PenaltiesQueryDto {
   @Max(PAGE.MAX)
   limit?: number;
 
-  // The `nextBefore` of the previous page.
+  // The `nextBefore` or `nextRestrictions` cursor of the previous page.
   @IsOptional()
   @IsString()
-  @Length(1, 40)
+  @Length(1, 512)
   before?: string;
+
+  @IsOptional()
+  @IsString()
+  @Length(1, 512)
+  restrictionBefore?: string;
 }
 
 export class RequestsQueryDto extends Page {

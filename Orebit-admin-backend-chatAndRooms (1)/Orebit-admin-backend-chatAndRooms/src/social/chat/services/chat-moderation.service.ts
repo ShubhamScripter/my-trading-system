@@ -54,6 +54,18 @@ export class ChatModerationService {
         detail: `Report ${dto.reportId} has already been resolved`,
       });
     if (report.status !== 'PENDING') throw resolvedAlready();
+    if (dto.action === 'RETRACT_MESSAGE' && report.dm_message_id && report.dm_archived) {
+      throw new ProblemException({
+        type: ERR.VALIDATION_FAILED,
+        detail: 'Archived messages are read-only and cannot be retracted',
+      });
+    }
+    if ((dto.action === 'WARN' || dto.action === 'BAN') && !report.reported_user_id) {
+      throw new ProblemException({
+        type: ERR.VALIDATION_FAILED,
+        detail: 'This report has no user target; dismiss it or retract its message instead',
+      });
+    }
 
     // Permanent only when asked for, otherwise 1 to maxBanHours; the database clock sets the end.
     const banSeconds =
@@ -62,11 +74,13 @@ export class ChatModerationService {
       const after: Record<string, unknown>[] = [];
       let banId: string | null = null;
       if (dto.action === 'BAN') {
+        const targetUserId = report.reported_user_id;
+        if (!targetUserId) throw new ProblemException({ type: ERR.VALIDATION_FAILED, detail: 'This report has no user target' });
         banId = ChatUtility.generateUuid();
         const { expiresAt } = await this.moderation.createBan(
           {
             id: banId,
-            userId: report.reported_user_id,
+            userId: targetUserId,
             roomId: null,
             adminId,
             internalReason: dto.note,
@@ -75,10 +89,10 @@ export class ChatModerationService {
           },
           tx,
         );
-        after.push({ kind: 'ban', userId: report.reported_user_id });
+        after.push({ kind: 'ban', userId: targetUserId });
         after.push({
           kind: 'notice',
-          userId: report.reported_user_id,
+          userId: targetUserId,
           // User receives the external note, while internal reason remains in audit log.
           notice: {
             action: 'ban',
@@ -113,9 +127,11 @@ export class ChatModerationService {
           });
         }
       } else if (dto.action === 'WARN') {
+        const targetUserId = report.reported_user_id;
+        if (!targetUserId) throw new ProblemException({ type: ERR.VALIDATION_FAILED, detail: 'This report has no user target' });
         await this.moderation.createWarning(
           {
-            userId: report.reported_user_id,
+            userId: targetUserId,
             roomId: null,
             internalReason: dto.note,
             userReason: dto.userReason ?? null,
@@ -125,7 +141,7 @@ export class ChatModerationService {
         );
         after.push({
           kind: 'notice',
-          userId: report.reported_user_id,
+          userId: targetUserId,
           notice: { action: 'warn', note: dto.userReason ?? null },
         });
       }

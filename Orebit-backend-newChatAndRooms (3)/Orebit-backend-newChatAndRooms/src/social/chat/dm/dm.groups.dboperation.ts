@@ -81,7 +81,7 @@ export interface InviteRecord {
   readonly conversationId: string;
   readonly inviterId: string;
   readonly inviteeId: string;
-  readonly status: 'PENDING' | 'ACCEPTED' | 'DECLINED' | 'REVOKED';
+  readonly status: 'PENDING' | 'ACCEPTED' | 'DECLINED' | 'REVOKED' | 'EXPIRED';
   readonly createdAt: Date;
 }
 
@@ -212,7 +212,7 @@ export class DmGroupsDbOperation {
         logo_url = CASE WHEN ${has('logoUrl')} THEN ${patch.logoUrl ?? null} ELSE logo_url END,
         visibility = CASE WHEN ${has('visibility')} THEN ${patch.visibility ?? null} ELSE visibility END,
         members_can_text = CASE WHEN ${has('membersCanText')} THEN ${patch.membersCanText ?? true} ELSE members_can_text END,
-        permissions = CASE WHEN ${has('permissions')} THEN ${JSON.stringify(patch.permissions ?? {})}::jsonb ELSE permissions END,
+        permissions = CASE WHEN ${has('permissions')} THEN permissions || ${JSON.stringify(patch.permissions ?? {})}::jsonb ELSE permissions END,
         admin_manageable = CASE WHEN ${has('adminManageable')} THEN ${JSON.stringify(patch.adminManageable ?? [])}::jsonb
                                 ELSE admin_manageable END,
         owner_id = CASE WHEN ${has('ownerId')} THEN ${patch.ownerId ?? null}::uuid ELSE owner_id END,

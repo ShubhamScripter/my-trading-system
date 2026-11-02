@@ -234,12 +234,12 @@ export class ChatModulesDbOperation {
       `;
       if (action === 'REMOVE') {
         await tx.$executeRaw`
-          INSERT INTO chat.room_excluded_users (room_id, user_id) VALUES (${roomId}::uuid, ${userId}::uuid)
+          INSERT INTO chat.room_excluded_users (id, room_id, user_id, created_by_admin) VALUES (${ChatUtility.generateUuid()}::uuid, ${roomId}::uuid, ${userId}::uuid, ${adminId}::uuid)
         `;
       }
       if (action === 'ADD') {
         await tx.$executeRaw`
-          INSERT INTO chat.room_included_users (room_id, user_id) VALUES (${roomId}::uuid, ${userId}::uuid)
+          INSERT INTO chat.room_included_users (id, room_id, user_id, created_by_admin) VALUES (${ChatUtility.generateUuid()}::uuid, ${roomId}::uuid, ${userId}::uuid, ${adminId}::uuid)
         `;
       }
     });

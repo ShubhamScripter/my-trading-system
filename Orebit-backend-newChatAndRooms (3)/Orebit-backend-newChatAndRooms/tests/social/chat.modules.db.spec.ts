@@ -50,6 +50,15 @@ describe.skipIf(!url)('chat Modules 4–9 on a real database', () => {
     VALUES (${id}::uuid, ${name}, ${name.toUpperCase()}, ${name}, ${name}, ${`${name}@t.test`}, ${`${name}@t.test`}, ${name})
   `;
 
+  const newRoom = async () => {
+    const id = uuidv7();
+    await prisma.$executeRaw`
+      INSERT INTO chat.rooms (id, slug, name, type, config)
+      VALUES (${id}::uuid, ${`m-${id.slice(-8)}`}, 'Isolated pin test', 'GLOBAL', '{"contentControls":{"allowAds":true}}')
+    `;
+    return id;
+  };
+
   beforeAll(async () => {
     prisma = new PrismaClient({ datasourceUrl: url });
     const p = prisma as unknown as PrismaService;
@@ -82,6 +91,30 @@ describe.skipIf(!url)('chat Modules 4–9 on a real database', () => {
   });
 
   // ─── Module 4 ───────────────────────────────────────────────────────────────────────────────────────────────────
+  it('report reason codes may be shared across USER and MESSAGE lists without breaking report references', async () => {
+    await prisma.$executeRaw`
+      INSERT INTO chat.report_reasons (code, label, report_type, sort_order)
+      VALUES ('SPAM', 'Profile spam', 'USER', 10)
+      ON CONFLICT (code, report_type) DO UPDATE SET label = EXCLUDED.label, is_active = true
+    `;
+    expect((await records.activeReportReasons('MESSAGE')).some((r) => r.code === 'SPAM')).toBe(true);
+    expect((await records.activeReportReasons('USER')).some((r) => r.code === 'SPAM')).toBe(true);
+    const report = await records.insertReport({
+      messageId: null,
+      messageCreatedAt: null,
+      reporterId: a,
+      reportedUserId: b,
+      reason: 'SPAM',
+      reportType: 'USER',
+      details: null,
+    });
+    expect(report).not.toBeNull();
+    const rows = await prisma.$queryRaw<{ report_type: string }[]>`
+      SELECT report_type FROM chat.chat_message_reports WHERE id = ${report!.id}::uuid
+    `;
+    expect(rows[0]?.report_type).toBe('USER');
+  });
+
   it('restrictions: live ones are listed, lifted and expired ones are not', async () => {
     const live = await staff.createRestriction(prisma, {
       targetType: 'USER',
@@ -137,7 +170,7 @@ describe.skipIf(!url)('chat Modules 4–9 on a real database', () => {
 
   it('role lookup, room access and room config written by staff', async () => {
     // Roles are given in the admin panel only (FR-002): the test writes the row the panel would.
-    await prisma.$executeRaw`INSERT INTO chat.staff_roles (user_id, role, assigned_by) VALUES (${c}::uuid, 'MODERATOR'::chat."StaffRole", ${a}::uuid)`;
+    await prisma.$executeRaw`INSERT INTO chat.staff_roles (id, user_id, role, assigned_by) VALUES (${uuidv7()}::uuid, ${c}::uuid, 'MODERATOR'::chat."StaffRole", ${a}::uuid)`;
     expect((await chat.findChatUser(c))?.staffRole).toBe('MODERATOR');
     await staff.setRoomAccess(prisma, roomId, b, 'REMOVE', a);
     expect(await chat.excludedRoomIds(b)).toContain(roomId);
@@ -292,23 +325,59 @@ describe.skipIf(!url)('chat Modules 4–9 on a real database', () => {
       ...patch,
     });
 
+  it('ads: maintenance candidates can be traversed in bounded keyset pages', async () => {
+    const ids = Array.from({ length: 5 }, () => uuidv7()).sort();
+    for (const id of ids) await newAd(id);
+
+    const seen: string[] = [];
+    let afterId: string | null = null;
+    for (;;) {
+      const page = await ads.adsWithStatus(['ACTIVE'], afterId, 2);
+      if (page.length === 0) break;
+      seen.push(...page.map((ad) => ad.id));
+      afterId = page.at(-1)!.id;
+    }
+    expect(new Set(seen).size).toBe(seen.length);
+    for (const id of ids) expect(seen).toContain(id);
+  });
+
+  it('ads: RESET_RESUME cancels old completed pin slots before queuing the fresh run', async () => {
+    const id = uuidv7();
+    const oldSlot = uuidv7();
+    await newAd(id);
+    await prisma.$executeRaw`UPDATE chat.chat_ads SET status = 'PAUSED' WHERE id = ${id}::uuid`;
+    await prisma.$executeRaw`
+      INSERT INTO chat.chat_ad_placements (id, ad_id, room_id, minutes, duration_seconds, status, starts_at, ends_at)
+      VALUES (${oldSlot}::uuid, ${id}::uuid, ${roomId}::uuid, 2, 120, 'DONE', now() - interval '3 minutes', now() - interval '1 minute')
+    `;
+
+    await ads.resumePaused(true);
+
+    const placements = await prisma.$queryRaw<{ id: string; status: string; minutes: number }[]>`
+      SELECT id, status, minutes FROM chat.chat_ad_placements WHERE ad_id = ${id}::uuid ORDER BY id
+    `;
+    expect(placements.find((p) => p.id === oldSlot)?.status).toBe('CANCELLED');
+    expect(placements.filter((p) => p.status === 'QUEUED').map((p) => p.minutes)).toEqual([5]);
+  });
+
   it('ads: one pinned slot per room at a time, repeats on the database clock, cancel and refund', async () => {
     const first = uuidv7();
     const second = uuidv7();
+    const adRoom = await newRoom();
     for (const id of [first, second]) {
-      await newAd(id);
-      await enqueuePin(prisma, id, roomId, 5);
+      await newAd(id, { roomIds: [adRoom] });
+      await enqueuePin(prisma, id, adRoom, 5 * 60);
     }
-    expect((await pins.queueLengths([roomId])).get(roomId)).toBe(2);
+    expect((await pins.queueLengths([adRoom])).get(adRoom)).toBe(2);
     const started = await pins.startQueuedPins();
-    expect(started.filter((x) => x.roomId === roomId).map((x) => x.adId)).toEqual([first]);
-    expect((await pins.startQueuedPins()).filter((x) => x.roomId === roomId)).toEqual([]);
-    expect((await pins.activePin(roomId))?.ad_id).toBe(first);
+    expect(started.filter((x) => x.roomId === adRoom).map((x) => x.adId)).toEqual([first]);
+    expect((await pins.startQueuedPins()).filter((x) => x.roomId === adRoom)).toEqual([]);
+    expect((await pins.activePin(adRoom))?.ad_id).toBe(first);
 
     // The first slot ends; the next one starts.
     await prisma.$executeRaw`UPDATE chat.chat_ad_placements SET ends_at = now() - interval '1 second' WHERE ad_id = ${first}::uuid`;
     expect((await pins.endExpiredPins()).map((x) => x.adId)).toContain(first);
-    expect((await pins.startQueuedPins()).filter((x) => x.roomId === roomId).map((x) => x.adId)).toEqual([second]);
+    expect((await pins.startQueuedPins()).filter((x) => x.roomId === adRoom).map((x) => x.adId)).toEqual([second]);
 
     // An ACTIVE ad is due its first post at once; posting counts only from the number it was claimed at.
     expect((await ads.claimDueRepeats(10, 600, first)).map((x) => x.id)).toContain(first);
@@ -326,7 +395,7 @@ describe.skipIf(!url)('chat Modules 4–9 on a real database', () => {
 
     // The refund is worked out inside the cancel, from the locked ad.
     const cancelled = await ads.cancel(second, a, 'stop', (locked) => (locked.chargeReference ? '4.5' : null), 'USDT');
-    expect(cancelled).toEqual({ cancelled: true, unpinnedRoomIds: [roomId], refundUsd: '4.5' });
+    expect(cancelled).toEqual({ cancelled: true, unpinnedRoomIds: [adRoom], refundUsd: '4.5' });
     expect((await ads.claimRefundsDue(10, 600)).map((x) => x.id)).toContain(second);
     expect(await ads.markRefunded(second)).toBe(true);
     expect(await ads.markRefunded(second)).toBe(false);
@@ -353,7 +422,7 @@ describe.skipIf(!url)('chat Modules 4–9 on a real database', () => {
     // A failed ad gives up its queued slots at once.
     const failed = uuidv7();
     await newAd(failed, { status: 'PENDING_PAYMENT', chargeReference: null });
-    await enqueuePin(prisma, failed, roomId, 5);
+    await enqueuePin(prisma, failed, roomId, 5 * 60);
     const before = (await pins.queueLengths([roomId])).get(roomId) ?? 0;
     expect(await ads.fail(failed, 'refused')).toBe(true);
     expect((await pins.queueLengths([roomId])).get(roomId) ?? 0).toBe(before - 1);
@@ -366,8 +435,8 @@ describe.skipIf(!url)('chat Modules 4–9 on a real database', () => {
     const y = uuidv7();
     await newAd(x, { roomIds: [room] });
     await newAd(y, { roomIds: [room] });
-    await enqueuePin(prisma, x, room, 5);
-    await enqueuePin(prisma, y, room, 5);
+    await enqueuePin(prisma, x, room, 5 * 60);
+    await enqueuePin(prisma, y, room, 5 * 60);
     await prisma.$executeRaw`UPDATE chat.chat_ad_placements SET status = 'ACTIVE', starts_at = now(), ends_at = now() + interval '5 minutes' WHERE ad_id = ${x}::uuid`;
     await expect(
       prisma.$executeRaw`UPDATE chat.chat_ad_placements SET status = 'ACTIVE', starts_at = now(), ends_at = now() + interval '5 minutes' WHERE ad_id = ${y}::uuid`,
@@ -461,7 +530,6 @@ describe.skipIf(!url)('chat Modules 4–9 on a real database', () => {
     });
     expect(made.created).toBe(true);
     expect(again).toEqual({ id: made.id, created: false });
-    expect(await dm.newDirectCount(a, 1)).toBe(1);
     expect((await dm.member(made.id, b))?.state).toBe('REQUEST');
 
     const clientId = uuidv7();
@@ -551,7 +619,6 @@ describe.skipIf(!url)('chat Modules 4–9 on a real database', () => {
       lastSeenVisibility: 'NOBODY',
       quietMode: 'CUSTOM',
       quietStart: '23:00',
-      timeZone: 'Asia/Kolkata',
     });
     expect((await inbox.prefs([c])).get(c)).toMatchObject({
       lastSeenVisibility: 'NOBODY',
@@ -582,7 +649,7 @@ describe.skipIf(!url)('chat Modules 4–9 on a real database', () => {
     if ('refused' in made) throw new Error('the invite was refused');
     const inviteId = made.inviteId;
     // V2-121: asking again gives the same invite; a second group's invite hits the pending cap.
-    expect(await invites.createInvite(groupId, a, b, limits)).toEqual({ inviteId });
+    expect(await invites.createInvite(groupId, a, b, limits)).toEqual({ inviteId, created: false });
     const other = await groups.createGroup({ ownerId: a, name: `H ${tag}`, description: null, logoUrl: null, visibility: 'PRIVATE' });
     expect(await invites.createInvite(other, a, b, limits)).toEqual({ refused: 'pending_cap' });
     expect(await invites.createInvite(other, a, c, { ...limits, perWindow: 1 })).toEqual({ refused: 'window_limit' });
@@ -597,6 +664,23 @@ describe.skipIf(!url)('chat Modules 4–9 on a real database', () => {
     expect((await inbox.commonGroups(a, b)).map((g) => g.id)).toEqual([groupId]);
     expect((await groups.publicGroups(c, tag, 10, null)).map((g) => g.id)).toContain(groupId);
 
+    // Closed-group invites do not consume the invitee's live pending cap; expired rows have their own state.
+    const closedGroup = await groups.createGroup({ ownerId: a, name: `X ${tag}`, description: null, logoUrl: null, visibility: 'PRIVATE' });
+    const closedInvite = await invites.createInvite(closedGroup, a, c, { ...limits, pendingPerPerson: 1 });
+    if ('refused' in closedInvite) throw new Error('closed-group fixture invite was refused');
+    await prisma.$executeRaw`UPDATE chat.dm_groups SET closed_at = now() WHERE conversation_id = ${closedGroup}::uuid`;
+    const liveGroup = await groups.createGroup({ ownerId: a, name: `Y ${tag}`, description: null, logoUrl: null, visibility: 'PRIVATE' });
+    const liveInvite = await invites.createInvite(liveGroup, a, c, { ...limits, pendingPerPerson: 1, perWindow: 100 });
+    expect('refused' in liveInvite).toBe(false);
+    await prisma.$executeRaw`UPDATE chat.dm_group_invites SET expires_at = now() - interval '1 minute'
+      WHERE id = ${closedInvite.inviteId}::uuid`;
+    expect(
+      await invites.createInvite(other, a, c, { ...limits, pendingPerPerson: 1, perWindow: 100 }),
+    ).toEqual({ refused: 'pending_cap' });
+    const [expiredInvite] = await prisma.$queryRaw<{ status: string }[]>`
+      SELECT status FROM chat.dm_group_invites WHERE id = ${closedInvite.inviteId}::uuid`;
+    expect(expiredInvite?.status).toBe('EXPIRED');
+
     await groups.updateGroup(groupId, {
       permissions: { RENAME: 'MEMBER' },
       membersCanText: false,
@@ -607,14 +691,31 @@ describe.skipIf(!url)('chat Modules 4–9 on a real database', () => {
       membersCanText: false,
       visibility: 'PRIVATE',
     });
+    await Promise.all([
+      groups.updateGroup(groupId, { permissions: { CHANGE_DESCRIPTION: 'ADMIN' } }),
+      groups.updateGroup(groupId, { permissions: { ADD_PEOPLE: 'SUB_ADMIN' } }),
+    ]);
+    expect(await groups.group(groupId)).toMatchObject({
+      permissions: {
+        RENAME: 'MEMBER',
+        CHANGE_DESCRIPTION: 'ADMIN',
+        ADD_PEOPLE: 'SUB_ADMIN',
+      },
+    });
     // V2-50: a type change still counts by the type the group was created as.
     expect(await groups.createdCount(a, 'PUBLIC')).toBe(1);
-    // Only the private group made above for the invite check counts as private; the type change added nothing.
-    expect(await groups.createdCount(a, 'PRIVATE')).toBe(1);
+    // The two live private invite-check groups count; the closed group and type change add nothing.
+    expect(await groups.createdCount(a, 'PRIVATE')).toBe(2);
 
     await bans.banMember(groupId, c, { userId: a, role: 'OWNER' }, 'spam');
     expect(await bans.isBanned(groupId, c)).toBe(true);
     expect((await dm.member(groupId, c))?.state).toBe('BANNED');
+    expect(await bans.banMember(groupId, c, { userId: b, role: 'MEMBER' }, 'takeover')).toBe(false);
+    const [banOwner] = await prisma.$queryRaw<{ banned_by_role: string }[]>`
+      SELECT banned_by_role::text FROM chat.dm_group_bans WHERE conversation_id = ${groupId}::uuid
+        AND user_id = ${c}::uuid AND removed_at IS NULL
+    `;
+    expect(banOwner!.banned_by_role).toBe('OWNER');
     // FR-203: only a role not below the banner lifts the ban.
     expect(await bans.unban(groupId, c, 'ADMIN', b)).toBe('outranked');
     expect(await bans.unban(groupId, c, 'OWNER', a)).toBe('ok');
@@ -666,5 +767,30 @@ describe.skipIf(!url)('chat Modules 4–9 on a real database', () => {
       ON CONFLICT (user_id) DO UPDATE SET follows = EXCLUDED.follows
     `;
     expect((await records.testFollows([a, b])).get(a)).toEqual([b]);
+  });
+
+  it('ads: pausing a ten-second pin preserves the remaining 290 seconds and bills only ten', async () => {
+    const id = uuidv7();
+    const adRoom = await newRoom();
+    await newAd(id, { roomIds: [adRoom] });
+    await enqueuePin(prisma, id, adRoom, 5 * 60);
+    const started = await pins.startQueuedPins();
+    const slot = started.find((placement) => placement.adId === id);
+    expect(slot).toBeDefined();
+    await prisma.$executeRaw`
+      UPDATE chat.chat_ad_placements SET starts_at = now() - interval '10 seconds'
+      WHERE id = ${slot!.id}::uuid
+    `;
+
+    await ads.pauseActive([id]);
+
+    const placements = await prisma.$queryRaw<{ status: string; duration_seconds: number }[]>`
+      SELECT status, duration_seconds FROM chat.chat_ad_placements WHERE ad_id = ${id}::uuid ORDER BY created_at
+    `;
+    expect(placements).toEqual([
+      expect.objectContaining({ status: 'DONE', duration_seconds: 10 }),
+      expect.objectContaining({ status: 'QUEUED', duration_seconds: 290 }),
+    ]);
+    expect(await pins.pinnedSecondsUsed(id)).toBe(10);
   });
 });

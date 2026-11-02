@@ -44,13 +44,11 @@ function harness(
     banned?: boolean;
     chat?: 'ACTIVE' | 'MAINTENANCE' | 'DISABLED';
     rows?: TicketRow[];
-    activeCount?: number;
   } = {},
 ) {
   const support = {
     create: vi.fn(async (_u: string, subject: string) => ticket({ subject })),
     ticketOf: vi.fn(async () => (opts.ticket === undefined ? ticket() : opts.ticket)),
-    countActive: vi.fn(async () => opts.activeCount ?? 0),
     list: vi.fn(async () => opts.rows ?? [ticket()]),
     messages: vi.fn(async () => [message()]),
     postUserMessage: vi.fn(async (_t: string, _u: string, content: string) =>
@@ -102,11 +100,11 @@ describe('ChatSupportService (Chat MAIN "Support Chat")', () => {
     expect(support.create).toHaveBeenCalledWith('u1', 'Appeal Ban', 'Please review');
   });
 
-  it('refuses to open when user reaches max open tickets limit (FR-132)', async () => {
-    const { service } = harness({ activeCount: 3 });
-    expect(
-      await reasonOf(service.open(USER, { subject: 'Another ticket', content: 'help' })),
-    ).toBe('limit_reached');
+  it('does not impose an invented chat-side ticket count cap', async () => {
+    const { service, support } = harness();
+    const opened = await service.open(USER, { subject: 'Another ticket', content: 'help' });
+    expect(opened.status).toBe('PENDING');
+    expect(support.create).toHaveBeenCalled();
   });
 
   it('a closed ticket takes no more messages', async () => {

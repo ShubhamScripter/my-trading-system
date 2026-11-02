@@ -1,6 +1,5 @@
 // Manages ad lifecycle: quoting, creation, publishing, pinned slots, and refunds.
 import { Injectable, Logger } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
 import { ERR } from '../../../contracts';
 import { ProblemException } from '../../../http';
 import { CHAT_REFUSAL_REASONS, SERVER_EVENTS, SYSTEM_AUTHOR_ID } from '../chat.constants';
@@ -18,7 +17,7 @@ import { uuidv7 } from '../../../utils/public.utils';
 import { fingerprint, requireKey } from '../platform/idempotency';
 import { isPositive } from '../platform/money';
 import { ChatFeaturePorts } from '../chat.feature-ports';
-import { refundForCancel } from './chat.ads.pricing';
+import { refundForAdvertiserStop, refundForCancel } from './chat.ads.pricing';
 import { ChatAdsPaymentService } from './chat.ads.payment';
 import { ChatAdsPlanner, type AdInput } from './chat.ads.plan';
 import { ChatRestrictionsService } from './chat.restrictions.service';
@@ -90,6 +89,8 @@ export class ChatAdsService {
       repeatGapMinutes: input.repeatGapMinutes ?? null,
       badgeId: input.badgeId ?? null,
       skinId: input.skinId ?? null,
+      is18Plus: input.is18Plus ?? false,
+      currencies: [...new Set((input.currencies ?? []).map((c) => c.trim().toUpperCase()))].sort(),
       hiddenCountries: [...new Set((input.hiddenCountries ?? []).map((c) => c.trim().toUpperCase()))].sort(),
     });
     // A claim older than the admin's job stale time is a dead worker's (no number of our own).
@@ -98,7 +99,7 @@ export class ChatAdsService {
     if (earlier) return this.replay(earlier, staleSeconds);
 
     const dbNow = await this.db.dbNow();
-    await this.moderation.assertNotBanned(user.id, null, dbNow);
+    await this.moderation.assertNotBanned(user, null, dbNow);
     const plan = await this.planner.plan(input);
     const facts = await this.access.factsFor(user);
     if (facts.kycEntitlements && !facts.kycEntitlements.publicChat) {
@@ -197,6 +198,7 @@ export class ChatAdsService {
     const settings = await this.settings.global();
     const badge = ad.badgeId ? (settings.ads.badges.find((b) => b.id === ad.badgeId) ?? null) : null;
     const skin = adSkinOf(ad.skinId, settings);
+    let delivered = 0;
     for (const roomId of ad.roomIds) {
       const room = await this.access.findRoom(roomId);
       if (!room || !this.adRoom(room, settings)) continue;
@@ -218,9 +220,14 @@ export class ChatAdsService {
           taggedUserIds: [],
         });
         this.delivery.publish(row);
+        delivered += 1;
       } catch (err: unknown) {
         this.logger.error({ component: 'ChatAdsService', err, adId: ad.id, roomId }, 'could not post an ad');
       }
+    }
+    if (delivered === 0) {
+      await this.ads.deferPost(ad.id);
+      return;
     }
     if (!(await this.ads.recordPosted(ad.id, ad.postedCount))) {
       this.logger.warn({ component: 'ChatAdsService', adId: ad.id }, 'a post was made for an ad whose count had moved');
@@ -264,8 +271,14 @@ export class ChatAdsService {
     }
   }
 
+  async announceCancelledPins(adId: string): Promise<void> {
+    for (const roomId of await this.pins.cancelledActivePins(adId)) {
+      this.delivery.toRoom(roomId, SERVER_EVENTS.AD_UNPINNED, { roomId, adId });
+    }
+  }
+
   // Handles maintenance mode transitions and pause/resume policies for ads.
-  async applyAdsStatus(): Promise<void> {
+  async applyAdsStatus(config: MoneyJobConfig, until: number): Promise<void> {
     const settings = await this.settings.global();
     const current = settings.maintenance.ads;
     const applied = await this.ads.appliedAdsStatus();
@@ -280,8 +293,15 @@ export class ChatAdsService {
         }
         outcome = `paused ${result.paused}`;
       } else if (action === 'REFUND_PENDING' || action === 'REFUND_FULL') {
-        const count = await this.refundAll(['ACTIVE', 'PAUSED'], action === 'REFUND_FULL', `Ads turned ${current.toLowerCase()}`);
-        outcome = `refunded ${count}`;
+        const result = await this.refundAll(
+          ['ACTIVE', 'PAUSED'], action === 'REFUND_FULL', `Ads turned ${current.toLowerCase()}`,
+          config.pageSize, until,
+        );
+        outcome = `refunded ${result.count}${result.complete ? '' : ' (continuing next pass)'}`;
+        if (!result.complete) {
+          this.logger.log({ component: 'ChatAdsService', from: applied, to: current, outcome }, 'ads status partially applied');
+          return;
+        }
       } else {
         outcome = 'finishing';
       }
@@ -290,8 +310,14 @@ export class ChatAdsService {
       if (action === 'RESUME' || action === 'RESET_RESUME') {
         outcome = `resumed ${await this.ads.resumePaused(action === 'RESET_RESUME')}`;
       } else {
-        const count = await this.refundAll(['PAUSED'], action === 'REFUND_FULL', 'Ads back after maintenance');
-        outcome = `refunded ${count}`;
+        const result = await this.refundAll(
+          ['PAUSED'], action === 'REFUND_FULL', 'Ads back after maintenance', config.pageSize, until,
+        );
+        outcome = `refunded ${result.count}${result.complete ? '' : ' (continuing next pass)'}`;
+        if (!result.complete) {
+          this.logger.log({ component: 'ChatAdsService', from: applied, to: current, outcome }, 'ads status partially applied');
+          return;
+        }
       }
     }
     await this.ads.setAppliedAdsStatus(current);
@@ -299,24 +325,34 @@ export class ChatAdsService {
   }
 
   // Cancels the ads in these states and refunds each paid one: what was not shown, or the whole price.
-  private async refundAll(statuses: ('ACTIVE' | 'PAUSED')[], full: boolean, note: string): Promise<number> {
+  private async refundAll(
+    statuses: ('ACTIVE' | 'PAUSED')[], full: boolean, note: string, pageSize: number, until: number,
+  ): Promise<{ count: number; complete: boolean }> {
     let count = 0;
-    for (const ad of await this.ads.adsWithStatus(statuses)) {
-      const result = await this.ads.cancel(ad.id, null, note, (locked, shown) =>
-        !locked.chargeReference ? null : full ? locked.priceUsd : refundForCancel(locked, shown),
-      );
-      if (!result.cancelled) continue;
-      count += 1;
-      for (const roomId of result.unpinnedRoomIds) {
-        this.delivery.toRoom(roomId, SERVER_EVENTS.AD_UNPINNED, { roomId, adId: ad.id });
+    let afterId: string | null = null;
+    while (Date.now() < until) {
+      const page = await this.ads.adsWithStatus(statuses, afterId, pageSize);
+      if (page.length === 0) return { count, complete: true };
+      for (const ad of page) {
+        if (Date.now() >= until) return { count, complete: false };
+        afterId = ad.id;
+        const result = await this.ads.cancel(ad.id, null, note, (locked, shown) =>
+          !locked.chargeReference ? null : full ? locked.priceUsd : refundForCancel(locked, shown),
+        );
+        if (!result.cancelled) continue;
+        count += 1;
+        for (const roomId of result.unpinnedRoomIds) {
+          this.delivery.toRoom(roomId, SERVER_EVENTS.AD_UNPINNED, { roomId, adId: ad.id });
+        }
       }
+      if (page.length < pageSize) return { count, complete: true };
     }
-    return count;
+    return { count, complete: false };
   }
 
   // Background worker pass: settles pending payments and scheduled ad repeats.
   async moneyPass(config: MoneyJobConfig, until: number): Promise<void> {
-    await this.applyAdsStatus();
+    await this.applyAdsStatus(config, until);
     await this.postClaimed(await this.payment.sweep(config, until));
     while (Date.now() < until) {
       const due = await this.ads.claimDueRepeats(config.pageSize, config.staleSeconds);
@@ -358,18 +394,23 @@ export class ChatAdsService {
       adId,
       user.id,
       'Cancelled by the advertiser',
-      (locked, shown) => (locked.chargeReference ? refundForCancel(locked, shown, cancellationFee) : null),
+      (locked) => {
+        if (locked.postedCount > 0) {
+          throw refuse(
+            ERR.FORBIDDEN,
+            CHAT_REFUSAL_REASONS.FEATURE_DISABLED,
+            'An ad cannot be cancelled by the advertiser after its first post',
+            {},
+            409,
+          );
+        }
+        return locked.chargeReference ? refundForAdvertiserStop(locked, cancellationFee) : null;
+      },
       coin,
+      true,
     );
     if (!result.cancelled) {
       throw refuse(ERR.FORBIDDEN, CHAT_REFUSAL_REASONS.FEATURE_DISABLED, 'This ad has already ended', {}, 409);
-    }
-    // Award EXP for the used USD portion upon cancellation
-    if (ad.creatorId && ad.chargeReference) {
-      const usedUsd = new Prisma.Decimal(ad.priceUsd).minus(result.refundUsd ?? 0);
-      if (usedUsd.gt(0)) {
-        await this.settlement.award(ad.id, ad.creatorId, usedUsd.toString());
-      }
     }
     // Leaderboard ad spend refund adjustment
     if (ad.creatorId && ad.kind !== 'INTERNAL' && result.refundUsd && isPositive(result.refundUsd)) {

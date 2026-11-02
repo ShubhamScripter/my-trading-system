@@ -1,7 +1,7 @@
 // The personal-chat inbox (Modules 8–9, Chat MAIN "Personal Chat will have 4 Tabs", Chat DM Settings): folders and
 // requests, moving people between Primary and General, pinned people, nicknames, per-conversation and folder
 // notifications with quiet mode, last-seen and common-group privacy, search, and the shared links and media.
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { ERR } from '../../../contracts';
 import { ProblemException } from '../../../http';
 import { CHAT_REFUSAL_REASONS, PAGE, SERVER_EVENTS } from '../chat.constants';
@@ -37,6 +37,7 @@ export type InboxFolder = DmFolder | 'REQUESTS' | 'CHANNELS';
 
 @Injectable()
 export class DmInboxService {
+  private readonly logger = new Logger('DmInboxService');
   constructor(
     private readonly dm: DmDbOperation,
     private readonly messagesDb: DmMessagesDbOperation,
@@ -65,7 +66,10 @@ export class DmInboxService {
       if (merchant) merchants.add(merchant);
     }
     const lists = await Promise.all(
-      [...merchants].map((merchant) => this.chatPorts.merchantApps(merchant).catch(() => null)),
+      [...merchants].map((merchant) => this.chatPorts.merchantApps(merchant).catch((err: unknown) => {
+        this.logger.warn({ err, merchantUserId: merchant }, 'could not resolve merchant app names');
+        return null;
+      })),
     );
     for (const list of lists) for (const app of list ?? []) names.set(app.id, app.name);
     return names;
@@ -79,7 +83,7 @@ export class DmInboxService {
     return {
       apps: rows.map((row) => ({
         appId: row.appId,
-        name: row.appId === null ? null : (names.get(row.appId) ?? row.appId),
+        name: row.appId === null ? null : (names.get(row.appId) ?? null),
         conversations: row.conversations,
         unread: row.unread,
       })),
@@ -97,14 +101,12 @@ export class DmInboxService {
     const out = new Map<string, { online: boolean; lastSeenAt: string | null } | null>();
     for (const id of ids) {
       const stored: StoredPrefs | undefined = prefs.get(id);
-      const choice =
-        // DM cannot be ACTIVE without the admin's default; until then nothing is shown.
-        (stored?.lastSeenVisibility as VisibilityChoice | null) ?? settings.privacy.lastSeenDefault ?? 'NOBODY';
+      const choice = (stored?.lastSeenVisibility as VisibilityChoice | null) ?? settings.privacy.lastSeenDefault;
       const follow = follows.get(id);
       const friend = Boolean(follow?.following && follow.followedBy);
       out.set(
         id,
-        visibleTo(choice, false, friend)
+        choice !== null && visibleTo(choice, false, friend)
           ? {
               online: this.presence.isOnline(id),
               lastSeenAt: stored?.lastSeenAt?.toISOString() ?? null,
@@ -409,7 +411,11 @@ export class DmInboxService {
   ) {
     await this.messages.guard(false);
     const text = (query.q ?? '').trim();
-    if (text.length < 2 || text.length > 100) throw this.invalid('q', '2 to 100 characters');
+    const settings = await this.messages.settings();
+    const minLength = requireLimit(settings.dm.searchMinLength, 'dm.searchMinLength');
+    const maxLength = requireLimit(settings.dm.searchMaxLength, 'dm.searchMaxLength');
+    if (maxLength < minLength || text.length < minLength || text.length > maxLength)
+      throw this.invalid('q', `${minLength} to ${maxLength} characters`);
     if (query.conversationId) await this.messages.requireMember(user.id, query.conversationId);
     const limit = query.limit ?? PAGE.DEFAULT;
     const rows = await this.messagesDb.search(
