@@ -140,7 +140,7 @@ export class ChatAccountService {
 
   // Profile cards
   async profile(viewer: ChatUserContext, handle: string) {
-    const userId = await this.db.resolveUserId(handle);
+    const userId = await this.db.resolvePublicUsername(handle);
     if (!userId)
       throw new ProblemException({
         type: ERR.NOT_FOUND,

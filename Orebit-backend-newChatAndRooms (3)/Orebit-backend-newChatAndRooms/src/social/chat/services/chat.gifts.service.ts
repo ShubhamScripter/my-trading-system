@@ -117,7 +117,7 @@ export class ChatGiftsService {
       });
     }
 
-    const recipientId = await this.db.resolveUserId(input.recipient.replace(/^@/, ''));
+    const recipientId = await this.db.resolvePublicUsername(input.recipient);
     const recipient = recipientId ? await this.db.findChatUser(recipientId) : null;
     if (!recipient)
       throw new ProblemException({

@@ -166,6 +166,17 @@ export class ChatDbOperation {
     return user?.id ?? null;
   }
 
+  /** Public user lookups accept usernames only; UUIDs and login codes are private identifiers. */
+  async resolvePublicUsername(username: string): Promise<string | null> {
+    const value = username.trim().replace(/^@/, '');
+    if (!value || /^[0-9a-f-]{36}$/i.test(value)) return null;
+    const user = await this.prisma.user.findFirst({
+      where: { deletedAt: null, status: 'ACTIVE', usernameLower: value.toLowerCase() },
+      select: { id: true },
+    });
+    return user?.id ?? null;
+  }
+
   /** Resolves user handle or UUID to internal user ID without leaking public codes. */
   async resolveUserHandle(handle: string): Promise<string | null> {
     const value = handle.trim().replace(/^@/, '');

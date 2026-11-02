@@ -58,11 +58,7 @@ export class ChatRoutes {
     @Req() req: FastifyRequest,
   ): Promise<SuccessEnvelope<{ id: string; slug: string }>> {
     const { adminId } = requirePrincipal(req);
-    // Room access rule changes require super-admin permissions.
-    const access = (body as { access?: unknown } | null)?.access;
-    if (typeof access === 'object' && access !== null && Object.keys(access).length > 0) {
-      await this.authority.assertSuperAdmin(adminId, 'Only a super admin may set a room access rule.');
-    }
+    await this.authority.assertSuperAdmin(adminId, 'Only a super admin may create chat rooms.');
     return this.controller.createRoom(body, adminId);
   }
 
@@ -72,6 +68,16 @@ export class ChatRoutes {
     @Req() req: FastifyRequest,
   ): Promise<SuccessEnvelope<{ success: boolean; slug?: string }>> {
     const { adminId } = requirePrincipal(req);
+    // Metadata and room lifecycle are super-admin controlled. Scoped moderation
+    // fields remain governed by the user-backend role settings.
+    const patch = (body && typeof body === 'object' ? body : {}) as Record<string, unknown>;
+    const scopedFields = new Set([
+      'roomId', 'rules', 'status', 'statusNote', 'statusUntil', 'contentControls',
+      'controlsMaintenance', 'linksPolicy', 'bannedWords', 'casino',
+    ]);
+    if (Object.keys(patch).some((key) => !scopedFields.has(key))) {
+      await this.authority.assertSuperAdmin(adminId, 'Only a super admin may change room metadata.');
+    }
     return this.controller.updateRoom(body, adminId);
   }
 
@@ -92,6 +98,7 @@ export class ChatRoutes {
     @Req() req: FastifyRequest,
   ): Promise<SuccessEnvelope<{ success: boolean }>> {
     const { adminId } = requirePrincipal(req);
+    await this.authority.assertSuperAdmin(adminId, 'Only a super admin may delete chat rooms.');
     return this.controller.deleteRoom(body, adminId);
   }
 
@@ -220,6 +227,7 @@ export class ChatRoutes {
     @Req() req: FastifyRequest,
   ): Promise<SuccessEnvelope<{ id: string }>> {
     const { adminId } = requirePrincipal(req);
+    await this.authority.assertSuperAdmin(adminId, 'Only a super admin may manage chat regions.');
     return this.controller.createRegion(body, adminId);
   }
 
@@ -229,6 +237,7 @@ export class ChatRoutes {
     @Req() req: FastifyRequest,
   ): Promise<SuccessEnvelope<{ success: boolean }>> {
     const { adminId } = requirePrincipal(req);
+    await this.authority.assertSuperAdmin(adminId, 'Only a super admin may manage chat regions.');
     return this.controller.updateRegion(body, adminId);
   }
 
@@ -238,6 +247,7 @@ export class ChatRoutes {
     @Req() req: FastifyRequest,
   ): Promise<SuccessEnvelope<{ success: boolean }>> {
     const { adminId } = requirePrincipal(req);
+    await this.authority.assertSuperAdmin(adminId, 'Only a super admin may manage chat regions.');
     return this.controller.deleteRegion(body, adminId);
   }
 

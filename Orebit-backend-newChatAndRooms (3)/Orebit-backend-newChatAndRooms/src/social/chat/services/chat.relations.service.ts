@@ -113,7 +113,7 @@ export class ChatRelationsService {
     user: ChatUserContext,
     handle: string,
   ): Promise<{ id: string; username: string }> {
-    const id = await this.chatDb.resolveUserId(handle.replace(/^@/, ''));
+    const id = await this.chatDb.resolvePublicUsername(handle);
     const target = id ? await this.chatDb.findChatUser(id) : null;
     if (!target)
       throw new ProblemException({
