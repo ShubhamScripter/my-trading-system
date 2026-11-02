@@ -107,11 +107,21 @@ export class ChatDelivery implements OnModuleDestroy {
     traffic.queue = [];
     if (batch.length === 0 || !this.server) return;
 
-    // Broadcast the batch once to members who hide none of these authors. A member who hides at least one author
-    // gets one personalized batch with only their visible messages. This avoids one room-wide frame per distinct
-    // mute set while keeping hidden messages out of that member's socket.
+    // Personalize for a small number of muters. When many users mute different authors, avoid one O(batch)
+    // payload per muter: broadcast unfiltered messages together and send each filtered message once, excluding
+    // only its hiders. This keeps work bounded by batch size while preserving mute privacy.
     const roomMembers = new Set(this.presence.userIdsInRoom(roomId));
     const hiders = new Set(batch.flatMap((item) => item.hiders).filter((id) => roomMembers.has(id)));
+    if (hiders.size > 32) {
+      const shared = batch.filter((item) => item.hiders.length === 0).map((item) => item.view);
+      if (shared.length > 0) this.server.to(socketRoom(roomId)).emit(SERVER_EVENTS.NEW_MESSAGES, shared);
+      for (const item of batch) {
+        if (item.hiders.length === 0) continue;
+        const excluded = [...new Set(item.hiders.filter((id) => roomMembers.has(id)))];
+        this.server.to(socketRoom(roomId)).except(excluded.map(personalRoom)).emit(SERVER_EVENTS.NEW_MESSAGE, item.view);
+      }
+      return;
+    }
     const views = batch.map((item) => item.view);
     let room = this.server.to(socketRoom(roomId));
     if (hiders.size > 0) room = room.except([...hiders].map(personalRoom));

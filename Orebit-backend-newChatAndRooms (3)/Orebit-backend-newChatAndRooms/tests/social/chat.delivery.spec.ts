@@ -82,6 +82,7 @@ describe('ChatDelivery batching with mute filters', () => {
     const hiderIds = Array.from({ length: 200 }, (_, index) => `hider-${index}`);
     const relations = {
       hidersOf: (authorId: string) => {
+        if (authorId === 'reader') return [];
         const index = Number(authorId.slice('author-'.length));
         return Number.isInteger(index) && index >= 0 && index < hiderIds.length ? [hiderIds[index]!] : [];
       },
@@ -121,10 +122,10 @@ describe('ChatDelivery batching with mute filters', () => {
       (entry) => entry.event === 'new_messages' && entry.to.includes('room:room-1'),
     );
     const personalBatches = emitted.filter((entry) => entry.event === 'new_messages' && entry.to[0]?.startsWith('socket:'));
-    expect(roomBatches).toHaveLength(4);
-    expect(personalBatches).toHaveLength(200);
-    expect(roomBatches.every((entry) => entry.except.length === 50)).toBe(true);
-    expect(personalBatches.every((entry) => (entry.payload as MessageRow[]).length === 49)).toBe(true);
+    const filteredMessages = emitted.filter((entry) => entry.event === 'new_message' && entry.to.includes('room:room-1'));
+    expect(roomBatches).toHaveLength(0);
+    expect(personalBatches).toHaveLength(0);
+    expect(filteredMessages.filter((entry) => entry.except.length === 1)).toHaveLength(200);
   });
 
   it('sends one shared batch for one muter hiding 200 authors', () => {

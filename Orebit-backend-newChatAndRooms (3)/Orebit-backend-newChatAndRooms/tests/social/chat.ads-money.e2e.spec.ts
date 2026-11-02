@@ -9,6 +9,8 @@ import { ChatAccessService } from '../../src/social/chat/chat.access.service';
 import { ChatSettingsService } from '../../src/social/chat/chat.settings';
 import type { ChatUserContext } from '../../src/social/chat/chat.types';
 import { ChatAdsService } from '../../src/social/chat/services/chat.ads.service';
+import { ChatAdsPaymentService } from '../../src/social/chat/services/chat.ads.payment';
+import { ChatAdDbOperation } from '../../src/social/chat/persistence/chat.ad.dboperation';
 import { ChatGiftsService } from '../../src/social/chat/services/chat.gifts.service';
 import { ChatGiftsSettlementService } from '../../src/social/chat/services/chat.gifts.settlement';
 import { moneyJobConfig } from '../../src/social/chat/services/chat.money-config';
@@ -216,6 +218,26 @@ describe.skipIf(!url)('ads money, claims and recovery (real services, scratch da
     expect(done).toMatchObject({ adId: pending!.id, status: 'ACTIVE' });
     expect([...charge.paid].filter((ref) => ref === pending!.id)).toHaveLength(1);
     expect(await adMessages(pending!.id)).toBe(1);
+  });
+
+  it('records a refund when a successful charge arrives after the ad was marked FAILED', async () => {
+    charge.mode = 'throw';
+    const key = `key-${uuidv7()}`;
+    expect(await refusal(() => buy(u.fay, key))).toBe('payment_pending');
+    const [pending] = await adRows(u.fay);
+    expect(pending!.status).toBe('PENDING_PAYMENT');
+    const ad = await module.get(ChatAdDbOperation).adById(pending!.id);
+    await prisma.$executeRaw`UPDATE chat.chat_ads SET status = 'FAILED' WHERE id = ${pending!.id}::uuid`;
+
+    charge.mode = 'ok';
+    const payment = module.get(ChatAdsPaymentService);
+    await expect(payment.settle(ad!)).rejects.toMatchObject({ extra: { reason: 'payment_failed' } });
+    const [row] = await prisma.$queryRaw<{ status: string; charge_reference: string | null; refund_usd: string | null }[]>`
+      SELECT status, charge_reference, refund_usd::text FROM chat.chat_ads WHERE id = ${pending!.id}::uuid
+    `;
+    expect(row).toMatchObject({ status: 'CANCELLED', charge_reference: `PAY-${pending!.id}` });
+    expect(Number(row!.refund_usd)).toBeGreaterThan(0);
+    expect(await adMessages(pending!.id)).toBe(0);
   });
 
   it('the sweeper reconciles ads left pending: PAID activates and posts, NOT_PAID fails, UNKNOWN waits', async () => {
