@@ -5,6 +5,7 @@ import { ChatAccessService } from './chat.access.service';
 import { ChatAccountService } from './services/chat.account.service';
 import { ChatAuthHelper } from './chat.auth.helper';
 import { ChatBus } from './realtime/chat.bus';
+import { ChatRedisService } from './chat.redis';
 import { ChatDelivery } from './realtime/chat.delivery';
 import { ChatController } from './chat.controller';
 import { ChatRoutes } from './chat.routes';
@@ -114,6 +115,7 @@ import { ChatMoneyRevertService } from './services/chat.money-revert.service';
   providers: [
     ChatController,
     ChatBus,
+    ChatRedisService,
     ChatDbOperation,
     ChatHistoryDbOperation,
     ChatRecordsDbOperation,

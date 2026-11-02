@@ -4,6 +4,7 @@ import { Test, type TestingModule } from '@nestjs/testing';
 import { PrismaClient } from '@prisma/client';
 import { PrismaService } from '../../db/client';
 import { RedisService } from '../../redis';
+import { ChatRedisService } from '../../src/social/chat/chat.redis';
 import { SessionService } from '../../auth/services/session.service';
 import { TwoFactorService } from '../../src/2fa/2fa.service';
 import { MailService } from '../../src/mail/mail.service';
@@ -93,6 +94,7 @@ describe.skipIf(!url)('chat Modules 4–9 end to end (real services, scratch dat
         ...(providers as never[]),
         { provide: PrismaService, useValue: prisma },
         { provide: RedisService, useValue: memoryRedis() },
+        { provide: ChatRedisService, useValue: memoryRedis() },
         { provide: SessionService, useValue: {} },
         // RainEmailCode (rain, not exercised here) needs a mail sender to be built.
         { provide: MailService, useValue: {} },

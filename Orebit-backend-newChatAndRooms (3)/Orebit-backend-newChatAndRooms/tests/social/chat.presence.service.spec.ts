@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { ChatPresenceService } from '../../src/social/chat/chat.presence.service';
 import type { ChatDbOperation } from '../../src/social/chat/chat.dboperation';
 import type { ChatSocket, OnlineMember } from '../../src/social/chat/chat.types';
-import type { RedisService } from '../../redis';
+import type { ChatRedisService } from '../../src/social/chat/chat.redis';
 
 function harness() {
   const redis = {
@@ -12,7 +12,7 @@ function harness() {
   };
   const db = { touchLastSeen: vi.fn(async () => undefined) };
   const presence = new ChatPresenceService(
-    redis as unknown as RedisService,
+    redis as unknown as ChatRedisService,
     db as unknown as ChatDbOperation,
   );
   return { presence, redis, db };

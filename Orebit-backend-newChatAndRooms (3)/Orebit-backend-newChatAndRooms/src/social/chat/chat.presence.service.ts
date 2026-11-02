@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { RedisService } from '../../../redis';
+import { ChatRedisService } from './chat.redis';
 import { ERR } from '../../contracts';
 import { ProblemException } from '../../http';
 import { PAGE, TIMERS } from './chat.constants';
@@ -32,7 +32,7 @@ export class ChatPresenceService {
   private readonly sortedRoomCache = new Map<string, { members: OnlineMember[]; expiresAt: number }>();
 
   constructor(
-    private readonly redis: RedisService,
+    private readonly redis: ChatRedisService,
     private readonly db: ChatDbOperation,
   ) {}
 

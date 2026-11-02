@@ -386,32 +386,39 @@ export class DmService {
         ...(input.media.thumbnailUrl ? { thumbnailUrl: input.media.thumbnailUrl } : {}),
       };
     }
-    await this.moderation.checkSendLimits(
+    const mediaLease = await this.moderation.checkSendLimits(
       user,
       ip,
       dbNow,
       await this.access.settingsFor(user),
       Boolean(media),
     );
-
-    const { row, duplicate } = await this.messagesDb.insertMessage({
-      conversationId,
-      senderId: user.id,
-      content: text,
-      type: media ? 'MEDIA' : 'TEXT',
-      metadata: {
-        ...(media ? { media } : {}),
-        ...(links.length > 0 ? { links: links.slice(0, 20) } : {}),
-        ...(extra.forwarded ? { forwarded: extra.forwarded } : {}),
-      },
-      ...(input.clientMessageId ? { clientMessageId: input.clientMessageId } : {}),
-      ...(memberUpdate ? { memberUpdate } : {}),
-    });
+    let inserted: Awaited<ReturnType<DmMessagesDbOperation['insertMessage']>>;
+    try {
+      inserted = await this.messagesDb.insertMessage({
+        conversationId,
+        senderId: user.id,
+        content: text,
+        type: media ? 'MEDIA' : 'TEXT',
+        metadata: {
+          ...(media ? { media } : {}),
+          ...(links.length > 0 ? { links: links.slice(0, 20) } : {}),
+          ...(extra.forwarded ? { forwarded: extra.forwarded } : {}),
+        },
+        ...(input.clientMessageId ? { clientMessageId: input.clientMessageId } : {}),
+        ...(memberUpdate ? { memberUpdate } : {}),
+      });
+    } catch (err) {
+      if (mediaLease) await this.moderation.releaseMediaCooldown(user.id, mediaLease);
+      throw err;
+    }
+    const { row, duplicate } = inserted;
     if (!duplicate) {
-      if (media) this.moderation.recordMediaSent(user.id, dbNow);
       void this.deliver(row).catch((err: unknown) =>
         this.logger.error({ err, conversationId, messageId: row.id }, 'DM message fan-out failed'),
       );
+    } else if (mediaLease) {
+      await this.moderation.releaseMediaCooldown(user.id, mediaLease);
     }
     return { message: toDmView(row, user.id), duplicate };
   }

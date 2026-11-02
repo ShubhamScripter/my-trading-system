@@ -226,8 +226,6 @@ export class ChatService {
     const settings = await this.access.settingsFor(user);
     assertPublicChatOpen(settings, true);
     const media = input.media ?? null;
-    await this.moderation.checkSendLimits(user, context.ip, dbNow, settings, media !== null);
-
     const access = await this.access.evaluate(user, room);
     if (!access.isEligibleToWrite) {
       throw refuse(
@@ -319,19 +317,35 @@ export class ChatService {
       ...(hideIdentity ? { anonymous: true as const } : {}),
     };
 
-    const { row, duplicateOf } = await this.db.insertMessage({
-      roomId: room.id,
-      userId: user.id,
-      content: text,
-      type: media ? 'MEDIA' : 'TEXT',
-      skinId,
-      metadata,
-      taggedUserIds,
-      ...(input.clientMessageId ? { clientMessageId: input.clientMessageId } : {}),
-    });
-    if (duplicateOf) return { row, room, taggedUserIds: [], duplicate: true };
+    const mediaLease = await this.moderation.checkSendLimits(
+      user,
+      context.ip,
+      dbNow,
+      settings,
+      media !== null,
+    );
+    let inserted: Awaited<ReturnType<ChatDbOperation['insertMessage']>>;
+    try {
+      inserted = await this.db.insertMessage({
+        roomId: room.id,
+        userId: user.id,
+        content: text,
+        type: media ? 'MEDIA' : 'TEXT',
+        skinId,
+        metadata,
+        taggedUserIds,
+        ...(input.clientMessageId ? { clientMessageId: input.clientMessageId } : {}),
+      });
+    } catch (err) {
+      if (mediaLease) await this.moderation.releaseMediaCooldown(user.id, mediaLease);
+      throw err;
+    }
+    const { row, duplicateOf } = inserted;
+    if (duplicateOf) {
+      if (mediaLease) await this.moderation.releaseMediaCooldown(user.id, mediaLease);
+      return { row, room, taggedUserIds: [], duplicate: true };
+    }
 
-    if (media) this.moderation.recordMediaSent(user.id, dbNow);
     this.sentThisMinute += 1;
     return { row, room, taggedUserIds, duplicate: false };
   }

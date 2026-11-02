@@ -1,6 +1,6 @@
 import { createHmac, randomUUID } from 'node:crypto';
 import { Injectable, Logger } from '@nestjs/common';
-import { RedisService } from '../../../redis';
+import { ChatRedisService } from './chat.redis';
 import { config } from '../../config';
 import { ERR } from '../../contracts';
 import { ProblemException } from '../../http';
@@ -29,6 +29,47 @@ interface WindowState {
   n: number;
   cu: number;
 }
+
+interface LocalWindowState extends WindowState {}
+
+const SEND_WINDOW_LUA = `
+local now = tonumber(ARGV[1])
+local windowMs = tonumber(ARGV[2])
+local max = tonumber(ARGV[3])
+local cooldownMs = tonumber(ARGV[4])
+local ttlSeconds = tonumber(ARGV[5])
+local ws, count, cu = now, 0, 0
+local raw = redis.call('GET', KEYS[1])
+if raw then
+  local ok, state = pcall(cjson.decode, raw)
+  if ok and type(state.ws) == 'number' and type(state.n) == 'number' then
+    ws, count, cu = state.ws, state.n, (type(state.cu) == 'number' and state.cu or 0)
+  end
+end
+if cu > now then return {0, math.max(1, math.ceil((cu - now) / 1000))} end
+if now - ws >= windowMs then ws, count = now, 0 end
+count = count + 1
+if count > max then
+  if cooldownMs > 0 then cu = now + cooldownMs end
+  redis.call('SET', KEYS[1], cjson.encode({ws = ws, n = count, cu = cu}), 'EX', ttlSeconds)
+  if cooldownMs > 0 then return {0, math.ceil(cooldownMs / 1000)} end
+  return {0, math.max(1, math.ceil((ws + windowMs - now) / 1000))}
+end
+redis.call('SET', KEYS[1], cjson.encode({ws = ws, n = count, cu = cu}), 'EX', ttlSeconds)
+return {1, 0}
+`;
+
+const START_MEDIA_LUA = `
+if redis.call('SET', KEYS[1], ARGV[1], 'PX', ARGV[2], 'NX') then return {1, 0} end
+return {0, math.max(1, redis.call('PTTL', KEYS[1]))}
+`;
+
+const RELEASE_MEDIA_LUA = `
+if redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('DEL', KEYS[1]) end
+return 0
+`;
+
+const LOCAL_WINDOW_MAX = 50_000;
 
 // A refusal with its machine-readable reason in both transports.
 export function refuse(
@@ -75,10 +116,13 @@ export class ChatModerationService {
   private minuteStartedAt = Date.now();
   // Users blocked as frequent hitters, with the database time they are blocked until.
   private blocked = new Map<string, Date>();
+  private readonly localWindows = new Map<string, LocalWindowState>();
+  private readonly localMedia = new Map<string, { token: string; expiresAt: number }>();
+  private redisLimitWarningLogged = false;
 
   constructor(
     private readonly records: ChatRecordsDbOperation,
-    private readonly redis: RedisService,
+    private readonly redis: ChatRedisService,
     private readonly bus: ChatBus,
     private readonly access: ChatAccessService,
     private readonly restrictions: ChatRestrictionsService,
@@ -217,23 +261,54 @@ export class ChatModerationService {
     });
   }
 
-  private async readWindow(key: string): Promise<WindowState | null> {
+  private async consumeWindow(
+    key: string,
+    now: number,
+    windowMs: number,
+    max: number,
+    cooldownMs = 0,
+  ): Promise<number> {
     try {
-      const raw = await this.redis.get(key);
-      if (raw === null) return null;
-      const parsed = JSON.parse(raw) as Partial<WindowState>;
-      if (typeof parsed.ws !== 'number' || typeof parsed.n !== 'number') return null;
-      return { ws: parsed.ws, n: parsed.n, cu: typeof parsed.cu === 'number' ? parsed.cu : 0 };
-    } catch {
-      // Redis unavailable or a corrupt value: the limiter fails open; it never locks anyone out.
-      return null;
+      const result = await this.redis.eval(
+        SEND_WINDOW_LUA,
+        1,
+        key,
+        String(now),
+        String(windowMs),
+        String(max),
+        String(cooldownMs),
+        String(CHAT_KEY_TTL.LIMIT_WINDOW),
+      );
+      if (!Array.isArray(result) || result.length < 2) throw new Error('invalid Redis limiter response');
+      return Number(result[0]) === 1 ? 0 : Math.max(1, Number(result[1]));
+    } catch (err: unknown) {
+      if (!this.redisLimitWarningLogged) {
+        this.redisLimitWarningLogged = true;
+        this.logger.warn({ err }, 'Redis unavailable: chat send limits are enforced in this process');
+      }
+      return this.consumeWindowLocal(key, now, windowMs, max, cooldownMs);
     }
   }
 
-  private writeWindow(key: string, state: WindowState): void {
-    this.redis
-      .set(key, JSON.stringify(state), 'EX', CHAT_KEY_TTL.LIMIT_WINDOW)
-      .catch(() => undefined);
+  private consumeWindowLocal(key: string, now: number, windowMs: number, max: number, cooldownMs: number): number {
+    let state = this.localWindows.get(key);
+    if (!state) {
+      if (this.localWindows.size >= LOCAL_WINDOW_MAX) this.localWindows.delete(this.localWindows.keys().next().value!);
+      state = { ws: now, n: 0, cu: 0 };
+      this.localWindows.set(key, state);
+    }
+    if (state.cu > now) return Math.max(1, Math.ceil((state.cu - now) / 1000));
+    if (now - state.ws >= windowMs) {
+      state.ws = now;
+      state.n = 0;
+    }
+    state.n += 1;
+    if (state.n <= max) return 0;
+    if (cooldownMs > 0) {
+      state.cu = now + cooldownMs;
+      return Math.max(1, Math.ceil(cooldownMs / 1000));
+    }
+    return Math.max(1, Math.ceil((state.ws + windowMs - now) / 1000));
   }
 
   // Slow mode, media cooldown and the per-IP limit, on the database clock. Each window is one Redis value written
@@ -245,7 +320,7 @@ export class ChatModerationService {
     dbNow: Date,
     settings: ChatSettings,
     isMedia: boolean,
-  ): Promise<void> {
+  ): Promise<string | null> {
     const now = dbNow.getTime();
     const limits = settings.limits;
 
@@ -264,18 +339,12 @@ export class ChatModerationService {
     const ipKey = CHAT_REDIS_KEYS.ipWindow(
       createHmac('sha256', config.rateLimitKeySecret).update(ip).digest('hex').slice(0, 32),
     );
-    const ipState = (await this.readWindow(ipKey)) ?? { ws: now, n: 0, cu: 0 };
-    if (now - ipState.ws >= 60_000) {
-      ipState.ws = now;
-      ipState.n = 0;
-    }
-    ipState.n += 1;
-    this.writeWindow(ipKey, ipState);
-    if (ipState.n > limits.sendsPerIpPerMinute) {
+    const ipWait = await this.consumeWindow(ipKey, now, 60_000, limits.sendsPerIpPerMinute);
+    if (ipWait > 0) {
       throw this.rateLimited(
         user.id,
         ip,
-        Math.max(1, Math.ceil((ipState.ws + 60_000 - now) / 1000)),
+        ipWait,
         'Too many messages from this network',
         'ip_limit',
       );
@@ -283,50 +352,66 @@ export class ChatModerationService {
 
     // Slow mode: at most N per window, then a cooldown.
     const key = CHAT_REDIS_KEYS.messageWindow(user.id);
-    const state = (await this.readWindow(key)) ?? { ws: now, n: 0, cu: 0 };
-    if (state.cu > now) {
+    const slowWait = await this.consumeWindow(
+      key,
+      now,
+      limits.messageWindowSeconds * 1000,
+      limits.messagesPerWindow,
+      limits.cooldownSeconds * 1000,
+    );
+    if (slowWait > 0) {
       throw this.rateLimited(
         user.id,
         ip,
-        Math.max(1, Math.ceil((state.cu - now) / 1000)),
-        'Slow down: cooldown active',
+        slowWait,
+        slowWait === limits.cooldownSeconds ? `Too many messages; wait ${slowWait}s` : 'Slow down: cooldown active',
       );
     }
-    if (now - state.ws >= limits.messageWindowSeconds * 1000) {
-      state.ws = now;
-      state.n = 0;
-    }
-    state.n += 1;
-    if (state.n > limits.messagesPerWindow) {
-      state.cu = now + limits.cooldownSeconds * 1000;
-      this.writeWindow(key, state);
-      throw this.rateLimited(
-        user.id,
-        ip,
-        limits.cooldownSeconds,
-        `Too many messages; wait ${limits.cooldownSeconds}s`,
-      );
-    }
-    this.writeWindow(key, state);
 
     if (isMedia && limits.mediaCooldownSeconds > 0) {
-      const last = await this.readWindow(CHAT_REDIS_KEYS.mediaWindow(user.id));
-      const until = (last?.ws ?? 0) + limits.mediaCooldownSeconds * 1000;
-      if (until > now) {
+      return this.startMediaCooldown(user.id, ip, now, limits.mediaCooldownSeconds);
+    }
+    return null;
+  }
+
+  // Reserve the media cooldown before inserting the message. A failed insert releases the lease.
+  async startMediaCooldown(userId: string, ip: string, now: number, seconds: number): Promise<string> {
+    const key = CHAT_REDIS_KEYS.mediaWindow(userId);
+    const token = randomUUID();
+    const ttlMs = seconds * 1000;
+    try {
+      const result = await this.redis.eval(START_MEDIA_LUA, 1, key, token, String(ttlMs));
+      if (Array.isArray(result) && Number(result[0]) === 1) return token;
+      const remaining = Array.isArray(result) ? Math.ceil(Number(result[1]) / 1000) : seconds;
+      throw this.rateLimited(userId, ip, Math.max(1, remaining), 'Media cooldown active', 'media_cooldown');
+    } catch (err: unknown) {
+      if (err instanceof ProblemException) throw err;
+      if (!this.redisLimitWarningLogged) {
+        this.redisLimitWarningLogged = true;
+        this.logger.warn({ err }, 'Redis unavailable: media cooldown is enforced in this process');
+      }
+      const existing = this.localMedia.get(userId);
+      if (existing && existing.expiresAt > now) {
         throw this.rateLimited(
-          user.id,
+          userId,
           ip,
-          Math.max(1, Math.ceil((until - now) / 1000)),
+          Math.max(1, Math.ceil((existing.expiresAt - now) / 1000)),
           'Media cooldown active',
           'media_cooldown',
         );
       }
+      this.localMedia.set(userId, { token, expiresAt: now + ttlMs });
+      return token;
     }
   }
 
-  // Starts the media cooldown once a media message is accepted.
-  recordMediaSent(userId: string, dbNow: Date): void {
-    this.writeWindow(CHAT_REDIS_KEYS.mediaWindow(userId), { ws: dbNow.getTime(), n: 1, cu: 0 });
+  async releaseMediaCooldown(userId: string, token: string): Promise<void> {
+    const key = CHAT_REDIS_KEYS.mediaWindow(userId);
+    try {
+      await this.redis.eval(RELEASE_MEDIA_LUA, 1, key, token);
+    } catch {
+      if (this.localMedia.get(userId)?.token === token) this.localMedia.delete(userId);
+    }
   }
 
   // Called by the maintenance tick once a minute.

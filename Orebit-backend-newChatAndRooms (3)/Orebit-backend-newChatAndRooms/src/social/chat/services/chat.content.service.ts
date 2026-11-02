@@ -1,8 +1,8 @@
 // The content rules of a room, run on every message before it is stored: allowed message types, deliberate
 // restrictions, banned words, links and repeated messages, and the offence ladder behind them. Bans, send limits and the frequent-hitter list are in ChatModerationService.
 import { createHash } from 'node:crypto';
-import { Injectable } from '@nestjs/common';
-import { RedisService } from '../../../../redis';
+import { Injectable, Logger } from '@nestjs/common';
+import { ChatRedisService } from '../chat.redis';
 import { ERR } from '../../../contracts';
 import { ProblemException } from '../../../http';
 import { ChatBus } from '../realtime/chat.bus';
@@ -18,11 +18,39 @@ import * as utility from '../chat.utility';
 import { canAct } from './chat.permissions';
 import { ChatRestrictionsService, type ActiveRestriction } from './chat.restrictions.service';
 
+const SPAM_WINDOW_LUA = `
+local now = tonumber(ARGV[1])
+local hash = ARGV[2]
+local windowMs = tonumber(ARGV[3])
+local repeatCount = tonumber(ARGV[4])
+local ttl = tonumber(ARGV[5])
+local state = nil
+local raw = redis.call('GET', KEYS[1])
+if raw then
+  local ok, decoded = pcall(cjson.decode, raw)
+  if ok and type(decoded.h) == 'string' and type(decoded.ws) == 'number' and type(decoded.n) == 'number' then
+    state = decoded
+  end
+end
+if not state or state.h ~= hash or now - state.ws > windowMs then state = {h = hash, ws = now, n = 0} end
+state.n = state.n + 1
+local hit = state.n >= repeatCount
+if hit then state = {h = hash, ws = now, n = 0} end
+redis.call('SET', KEYS[1], cjson.encode(state), 'EX', ttl)
+if hit then return 1 end
+return 0
+`;
+
+const LOCAL_SPAM_MAX = 50_000;
+
 @Injectable()
 export class ChatContentService {
+  private readonly logger = new Logger('ChatContentService');
+  private readonly localSpam = new Map<string, { hash: string; startedAt: number; count: number }>();
+  private spamRedisWarningLogged = false;
   constructor(
     private readonly records: ChatRecordsDbOperation,
-    private readonly redis: RedisService,
+    private readonly redis: ChatRedisService,
     private readonly bus: ChatBus,
     private readonly moderation: ChatModerationService,
     private readonly restrictions: ChatRestrictionsService,
@@ -187,21 +215,36 @@ export class ChatContentService {
     const key = CHAT_REDIS_KEYS.spamWindow(userId, roomId);
     const now = dbNow.getTime();
     const hash = createHash('sha256').update(text.trim().toLowerCase()).digest('hex').slice(0, 32);
-    let state: { h: string; ws: number; n: number } | null = null;
     try {
-      const raw = await this.redis.get(key);
-      state = raw ? (JSON.parse(raw) as { h: string; ws: number; n: number }) : null;
-    } catch {
-      state = null;
+      const result = await this.redis.eval(
+        SPAM_WINDOW_LUA,
+        1,
+        key,
+        String(now),
+        hash,
+        String(windowSeconds * 1000),
+        String(repeat),
+        String(CHAT_KEY_TTL.SPAM_WINDOW),
+      );
+      return Number(result) === 1;
+    } catch (err: unknown) {
+      if (!this.spamRedisWarningLogged) {
+        this.spamRedisWarningLogged = true;
+        this.logger.warn({ err }, 'Redis unavailable: repeated-message limits are enforced in this process');
+      }
     }
-    if (!state || state.h !== hash || now - state.ws > windowSeconds * 1000)
-      state = { h: hash, ws: now, n: 0 };
-    state.n += 1;
-    const hit = state.n >= repeat;
-    const next = hit ? { h: hash, ws: now, n: 0 } : state;
-    this.redis
-      .set(key, JSON.stringify(next), 'EX', CHAT_KEY_TTL.SPAM_WINDOW)
-      .catch(() => undefined);
+    let state = this.localSpam.get(key);
+    if (!state || state.hash !== hash || now - state.startedAt > windowSeconds * 1000) {
+      state = { hash, startedAt: now, count: 0 };
+      if (this.localSpam.size >= LOCAL_SPAM_MAX) this.localSpam.delete(this.localSpam.keys().next().value!);
+      this.localSpam.set(key, state);
+    }
+    state.count += 1;
+    const hit = state.count >= repeat;
+    if (hit) {
+      state.startedAt = now;
+      state.count = 0;
+    }
     return hit;
   }
 

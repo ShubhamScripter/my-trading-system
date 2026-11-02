@@ -22,7 +22,7 @@ import type {
   EligibilityFacts,
   RoomRecord,
 } from '../../src/social/chat/chat.types';
-import type { RedisService } from '../../redis';
+import type { ChatRedisService } from '../../src/social/chat/chat.redis';
 
 /** A ladder is set here the way an admin must set one (chat-wide, V2-30): with none, nothing is counted. */
 const LADDER: AutoBanTier[] = [
@@ -77,6 +77,7 @@ function fakeRedis(opts: { failWrites?: boolean } = {}) {
     store,
     get: vi.fn(async (k: string) => store.get(k) ?? null),
     mget: vi.fn(async (...keys: string[]) => keys.map((k) => store.get(k) ?? null)),
+    eval: vi.fn(async () => { throw new Error('Redis unavailable'); }),
     set: vi.fn(async (k: string, v: string) => {
       if (opts.failWrites) throw new Error('lost');
       store.set(k, v);
@@ -139,14 +140,14 @@ function harness(
   };
   const service = new ChatModerationService(
     db as never,
-    redis as unknown as RedisService,
+    redis as unknown as ChatRedisService,
     bus,
     access as never,
     restrictions,
   );
   const content = new ChatContentService(
     db as never,
-    redis as unknown as RedisService,
+    redis as unknown as ChatRedisService,
     bus,
     service,
     restrictions,
@@ -203,31 +204,30 @@ describe('slow mode on the database clock', () => {
     ).toBe('ok');
   });
 
-  it('a Redis that loses writes never locks the user out', async () => {
+  it('enforces the same send cap in-process while Redis is unavailable', async () => {
     const { service } = harness({ failWrites: true });
-    for (let i = 0; i < 20; i += 1) {
-      expect(
-        (await reason(() => service.checkSendLimits(USER, '1.1.1.1', at(i), SETTINGS, false))).type,
-      ).toBe('ok');
-    }
+    const results = await Promise.all(
+      Array.from({ length: 50 }, () => reason(() => service.checkSendLimits(USER, '1.1.1.1', at(0), SETTINGS, false))),
+    );
+    expect(results.filter((result) => result.type === 'ok')).toHaveLength(5);
+    expect(results.filter((result) => result.type === 'rate_limited')).toHaveLength(45);
   });
 
-  it('every limiter value is written with a TTL (one SET … EX)', async () => {
+  it('runs send limits through one atomic Redis script', async () => {
     const { service, redis } = harness();
     await service.checkSendLimits(USER, '1.1.1.1', at(0), SETTINGS, false);
-    for (const call of redis.set.mock.calls)
-      expect(call.slice(2)).toEqual(['EX', expect.any(Number)]);
+    expect(redis.eval).toHaveBeenCalledTimes(2);
   });
 
-  it('media cooldown is judged on database time', async () => {
+  it('reserves the media cooldown before insert and releases it on failure', async () => {
     const { service } = harness();
-    service.recordMediaSent(USER.id, at(0));
+    const lease = await service.checkSendLimits(USER, '1.1.1.1', at(0), SETTINGS, true);
+    expect(lease).toEqual(expect.any(String));
+    expect((await reason(() => service.checkSendLimits(USER, '1.1.1.1', at(10), SETTINGS, true))).type).toBe('rate_limited');
+    await service.releaseMediaCooldown(USER.id, lease!);
     expect(
-      (await reason(() => service.checkSendLimits(USER, '1.1.1.1', at(10), SETTINGS, true))).type,
-    ).toBe('rate_limited');
-    expect(
-      (await reason(() => service.checkSendLimits(USER, '1.1.1.2', at(31), SETTINGS, true))).type,
-    ).toBe('ok');
+      await service.checkSendLimits(USER, '1.1.1.2', at(11), SETTINGS, true),
+    ).toEqual(expect.any(String));
   });
 });
 

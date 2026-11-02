@@ -40,6 +40,8 @@ const schema = z.object({
   PG_POOL_MAX: z.coerce.number().int().positive().default(10),
 
   REDIS_URL: z.string().min(1),
+  /** Dedicated cache endpoint for chat presence and abuse-limit state. */
+  CHAT_REDIS_URL: z.string().default(''),
 
   /**
    * The DURABLE Redis instance — the mail queue lives here, and nothing else does.
@@ -636,6 +638,8 @@ function load() {
     smtpBackupEnabled: env.MAIL_TRANSPORT === 'smtp' && env.SMTP_BACKUP_HOST !== '',
     /** The durable instance, falling back to the cache — see `REDIS_DURABLE_URL`. */
     redisDurableUrl: env.REDIS_DURABLE_URL === '' ? env.REDIS_URL : env.REDIS_DURABLE_URL,
+    /** Local development can share the platform cache; deployments should set a chat-only endpoint. */
+    chatRedisUrl: env.CHAT_REDIS_URL === '' ? env.REDIS_URL : env.CHAT_REDIS_URL,
     /** False when the queue is sharing the cache instance, which is worth saying out
      *  loud at boot rather than discovering when a restart loses a code. */
     mailQueueIsDurable: env.REDIS_DURABLE_URL !== '',

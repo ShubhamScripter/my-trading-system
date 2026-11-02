@@ -5,7 +5,7 @@
 // Redis holds the counter (atomic INCR, so parallel requests cannot all pass the last place). While Redis is down the
 // granted in-process fallback takes over: the same rule on a steady clock, never "no limit".
 import { Injectable, Logger } from '@nestjs/common';
-import { RedisService } from '../../../../redis';
+import { ChatRedisService } from '../chat.redis';
 
 export interface LimitRule {
   readonly max: number;
@@ -27,7 +27,7 @@ export class ChatActionLimiter {
   private readonly local = new Map<string, LocalState>();
   private warned = false;
 
-  constructor(private readonly redis: RedisService) {}
+  constructor(private readonly redis: ChatRedisService) {}
 
   // 0 when the action may go on (and is counted), else the seconds to wait.
   async hit(key: string, rule: LimitRule): Promise<number> {

@@ -60,6 +60,15 @@ jobs:
           --health-timeout 3s
           --health-retries 5
 
+      redis-chat:
+        image: redis:7-alpine
+        ports: ["6381:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 5
+
     env:
       # No password here, unlike compose: these containers are reachable only from
       # this job's network. The spec's default URL carries the compose credential, so
@@ -67,6 +76,7 @@ jobs:
       TEST_REDIS_URL: redis://127.0.0.1:6379
       REDIS_URL: redis://127.0.0.1:6379
       REDIS_DURABLE_URL: redis://127.0.0.1:6380
+      CHAT_REDIS_URL: redis://127.0.0.1:6381
       DATABASE_URL: postgresql://orebit:orebit@127.0.0.1:5432/orebit_test?schema=public
       DATABASE_DIRECT_URL: postgresql://orebit:orebit@127.0.0.1:5432/orebit_test?schema=public
       CHAT_TEST_DATABASE_URL: postgresql://orebit:orebit@127.0.0.1:5432/orebit_test?schema=public
