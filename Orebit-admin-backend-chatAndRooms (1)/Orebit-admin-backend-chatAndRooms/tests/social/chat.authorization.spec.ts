@@ -90,7 +90,7 @@ describe('routes that only a super admin may call', () => {
     expect(guardsOf(found!.handler)).toContain(SuperAdminGuard);
   });
 
-  it('no other route is limited by that guard (broadcast and room creation check their own body)', () => {
+  it('no other route is limited by that guard (some room writes check current DB role in-handler)', () => {
     const guarded = routes
       .filter((r) => guardsOf(r.handler).includes(SuperAdminGuard))
       .map((r) => r.route)
@@ -125,6 +125,11 @@ describe('routes that check the body', () => {
     const controller = {
       sendBroadcast: vi.fn(async () => ({ data: { success: true } })),
       createRoom: vi.fn(async () => ({ data: { id: 'r', slug: 's' } })),
+      updateRoom: vi.fn(async () => ({ data: { success: true } })),
+      deleteRoom: vi.fn(async () => ({ data: { success: true } })),
+      createRegion: vi.fn(async () => ({ data: { id: 'region' } })),
+      updateRegion: vi.fn(async () => ({ data: { success: true } })),
+      deleteRegion: vi.fn(async () => ({ data: { success: true } })),
       upsertTestEntitlement: vi.fn(async () => ({ data: { success: true } })),
     };
     return { controller, routes: new ChatRoutes(controller as never, new ChatAuthorityService(admins as never)) };
@@ -144,18 +149,44 @@ describe('routes that check the body', () => {
     expect(controller.sendBroadcast).toHaveBeenCalledTimes(2);
   });
 
-  it('creating a room with an access rule needs a super admin; without one any admin may', async () => {
+  it('room creation and deletion require super admin; scoped moderation changes remain separate', async () => {
     const { controller, routes: chatRoutes } = build();
     signedInAs('ADMIN');
     database.role = 'ADMIN';
-    await chatRoutes.createRoom({ name: 'Plain' }, req);
-    await expect(chatRoutes.createRoom({ name: 'Gated', access: { minLevel: 5 } }, req)).rejects.toMatchObject({
+    await expect(chatRoutes.createRoom({ name: 'Plain' }, req)).rejects.toMatchObject({
       type: ERR.FORBIDDEN,
     });
-    expect(controller.createRoom).toHaveBeenCalledTimes(1);
+    expect(controller.createRoom).not.toHaveBeenCalled();
     database.role = 'SUPER_ADMIN';
     await chatRoutes.createRoom({ name: 'Gated', access: { minLevel: 5 } }, req);
-    expect(controller.createRoom).toHaveBeenCalledTimes(2);
+    expect(controller.createRoom).toHaveBeenCalledTimes(1);
+    await expect(chatRoutes.deleteRoom({ roomId: 'r' }, req)).resolves.toBeDefined();
+    database.role = 'ADMIN';
+    await expect(chatRoutes.deleteRoom({ roomId: 'r' }, req)).rejects.toMatchObject({ type: ERR.FORBIDDEN });
+    expect(controller.deleteRoom).toHaveBeenCalledTimes(1);
+  });
+
+  it('room metadata and all region mutations require super admin', async () => {
+    const { controller, routes: chatRoutes } = build();
+    signedInAs('ADMIN');
+    database.role = 'ADMIN';
+    await expect(chatRoutes.updateRoom({ roomId: 'r', name: 'New name' }, req)).rejects.toMatchObject({ type: ERR.FORBIDDEN });
+    await expect(chatRoutes.createRegion({ name: 'Region', countries: ['IN'] }, req)).rejects.toMatchObject({ type: ERR.FORBIDDEN });
+    await expect(chatRoutes.updateRegion({ regionId: 'r', name: 'Region' }, req)).rejects.toMatchObject({ type: ERR.FORBIDDEN });
+    await expect(chatRoutes.deleteRegion({ regionId: 'r' }, req)).rejects.toMatchObject({ type: ERR.FORBIDDEN });
+    expect(controller.updateRoom).not.toHaveBeenCalled();
+    expect(controller.createRegion).not.toHaveBeenCalled();
+    expect(controller.updateRegion).not.toHaveBeenCalled();
+    expect(controller.deleteRegion).not.toHaveBeenCalled();
+    database.role = 'SUPER_ADMIN';
+    await chatRoutes.updateRoom({ roomId: 'r', name: 'New name' }, req);
+    await chatRoutes.createRegion({ name: 'Region', countries: ['IN'] }, req);
+    await chatRoutes.updateRegion({ regionId: 'r', name: 'Region' }, req);
+    await chatRoutes.deleteRegion({ regionId: 'r' }, req);
+    expect(controller.updateRoom).toHaveBeenCalledOnce();
+    expect(controller.createRegion).toHaveBeenCalledOnce();
+    expect(controller.updateRegion).toHaveBeenCalledOnce();
+    expect(controller.deleteRegion).toHaveBeenCalledOnce();
   });
 
   it('the test-only tools are refused in production before anything is read or written', async () => {
