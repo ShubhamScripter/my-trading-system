@@ -72,6 +72,7 @@ const UNREAD_EXISTS = Prisma.sql`EXISTS (
 
 @Injectable()
 export class DmInboxDbOperation {
+  private static readonly PREFS_CACHE_MS = 5 * 60_000;
   private readonly switches = new Map<string, { on: boolean; at: number }>();
   private readonly prefsCache = new Map<string, { value: StoredPrefs; at: number }>();
 
@@ -250,7 +251,7 @@ export class DmInboxDbOperation {
     const missing: string[] = [];
     for (const id of userIds) {
       const hit = this.prefsCache.get(id);
-      if (hit && now - hit.at < 60_000) out.set(id, hit.value);
+      if (hit && now - hit.at < DmInboxDbOperation.PREFS_CACHE_MS) out.set(id, hit.value);
       else missing.push(id);
     }
     if (missing.length === 0) return out;

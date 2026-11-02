@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { Logger } from '@nestjs/common';
 import { ChatBus, type ChatChange } from '../../src/social/chat/realtime/chat.bus';
 import { ChatEventsListener } from '../../src/social/chat/chat.events.listener';
 import type { ChatDbOperation } from '../../src/social/chat/chat.dboperation';
@@ -20,7 +21,7 @@ function harness() {
     created_at: new Date('2026-09-28T12:00:00Z'),
     ...overrides,
   });
-  return { listener, changes, action };
+  return { listener, changes, action, db };
 }
 
 describe('ChatEventsListener.dispatch', () => {
@@ -87,6 +88,17 @@ describe('ChatEventsListener.dispatch', () => {
     listener.dispatch(once as never);
     listener.dispatch(once as never);
     expect(changes).toHaveLength(1);
+  });
+
+  it('logs rejected broadcast lookups from both live signals and replayed admin actions', async () => {
+    const warn = vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    const { listener, action, db } = harness();
+    db.broadcastMessages.mockRejectedValue(new Error('temporary database error'));
+    listener.dispatchChange({ kind: 'alert', broadcastId: 'live-broadcast' });
+    listener.dispatch(action({ action: 'broadcast', new_value: { broadcastId: 'replayed-broadcast' } }) as never);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(warn).toHaveBeenCalledTimes(2);
+    expect(db.broadcastMessages).toHaveBeenCalledTimes(2);
   });
 });
 

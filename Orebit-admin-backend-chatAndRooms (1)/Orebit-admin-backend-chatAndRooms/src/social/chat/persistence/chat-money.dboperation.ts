@@ -249,9 +249,8 @@ export class ChatMoneyDbOperation {
 
   /**
    * Cancels an ACTIVE or PAUSED ad and works out its refund INSIDE the transaction, with the ad row locked, so a post
-   * that lands between "read" and "cancel" is never missed. The share is exact decimal arithmetic in the database and
-   * cut (never rounded) to 8 places: price × unused / units, where units are the posts plus the pinned minutes, and the
-   * pinned minutes count once per ad (not per room) — the same rule as the chat server. NONE and FULL need no share.
+   * that lands between "read" and "cancel" is never missed. Post and pin values are prorated independently from the
+   * stored itemized breakdown; a post and a pinned minute have different prices. The result is cut to 8 places.
    */
   async cancelAd(
     id: string,
@@ -261,9 +260,9 @@ export class ChatMoneyDbOperation {
   ): Promise<{ cancelled: boolean; refundUsd: string | null }> {
     return this.prisma.$transaction(async (tx) => {
       const rows = await tx.$queryRaw<
-        { price_usd: Prisma.Decimal; repeat_count: number; posted_count: number; pin_minutes: number | null; charge_reference: string | null }[]
+        { price_usd: Prisma.Decimal; breakdown: unknown; repeat_count: number; posted_count: number; pin_minutes: number | null; charge_reference: string | null }[]
       >`
-        SELECT price_usd, repeat_count, posted_count, pin_minutes, charge_reference
+        SELECT price_usd, breakdown, repeat_count, posted_count, pin_minutes, charge_reference
         FROM chat.chat_ads WHERE id = ${id}::uuid AND status IN ('ACTIVE', 'PAUSED') FOR UPDATE
       `;
       const ad = rows[0];
@@ -283,10 +282,26 @@ export class ChatMoneyDbOperation {
           `;
           const totalPosts = ad.repeat_count + 1;
           const pinned = ad.pin_minutes ?? 0;
-          const units = totalPosts + pinned;
-          const unused = Math.max(0, totalPosts - ad.posted_count) + Math.max(0, pinned - (used[0]?.used ?? 0));
+          const unusedPosts = Math.max(0, totalPosts - ad.posted_count);
+          const unusedPinMinutes = Math.max(0, pinned - (used[0]?.used ?? 0));
+          let postTotal = new Prisma.Decimal(0);
+          let pinTotal = new Prisma.Decimal(0);
+          if (Array.isArray(ad.breakdown)) {
+            for (const line of ad.breakdown) {
+              if (!line || typeof line !== 'object') continue;
+              const item = line as { label?: unknown; usd?: unknown };
+              if (typeof item.label !== 'string' || typeof item.usd !== 'string') continue;
+              if (/^Pinned\b/.test(item.label)) pinTotal = pinTotal.add(item.usd);
+              else if (item.label !== 'Ad skin') postTotal = postTotal.add(item.usd);
+            }
+          }
+          // Old unpinned rows can safely treat the whole price as post spend. If an old pinned row lacks
+          // itemization, do not guess and accidentally refund pin value as if it were post value.
+          if ((!Array.isArray(ad.breakdown) || ad.breakdown.length === 0) && pinned === 0) postTotal = ad.price_usd;
+          const postPart = postTotal.mul(unusedPosts).div(totalPosts).toFixed(18);
+          const pinPart = pinned > 0 ? pinTotal.mul(unusedPinMinutes).div(pinned).toFixed(18) : '0';
           const share = await tx.$queryRaw<{ refund: string }[]>`
-            SELECT trunc(${ad.price_usd.toFixed(8)}::numeric * ${unused}::numeric / ${units}::numeric, 8)::text AS refund
+            SELECT trunc((${postPart}::numeric + ${pinPart}::numeric), 8)::text AS refund
           `;
           refundUsd = share[0]!.refund;
         }

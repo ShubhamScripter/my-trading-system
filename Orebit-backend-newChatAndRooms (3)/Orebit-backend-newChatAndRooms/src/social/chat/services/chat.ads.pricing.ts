@@ -228,6 +228,7 @@ export function unusedRefundUsd(priceUsd: string, parts: UnusedParts): string {
 export function refundForCancel(
   ad: {
     readonly priceUsd: string;
+    readonly breakdown?: unknown;
     readonly repeatCount: number;
     readonly postedCount: number;
     readonly pinMinutes: number | null;
@@ -236,17 +237,34 @@ export function refundForCancel(
   pinnedSecondsUsed: number,
   fee?: PriceAdd | null,
 ): string {
-  // The pinned minutes were charged once per ad, so they are refunded once per ad, not per room.
+  // Posts and pin time have different prices. Split the stored itemized price before prorating either part;
+  // treating one post as one pinned minute can refund almost the whole ad after its post has already gone out.
+  const totalPosts = ad.repeatCount + 1;
+  const unusedPosts = Math.max(0, totalPosts - ad.postedCount);
   const pinnedMinutes = ad.pinMinutes ?? 0;
-  const raw = unusedRefundUsd(
-    ad.priceUsd,
-    unusedParts({
-      totalPosts: ad.repeatCount + 1,
-      postedCount: ad.postedCount,
-      pinnedMinutes,
-      pinnedSecondsUsed,
-    }),
-  );
+  const unusedPinSeconds = Math.max(0, pinnedMinutes * 60 - pinnedSecondsUsed);
+  const parts = ad.breakdown;
+  let postTotal = D(0);
+  let pinTotal = D(0);
+  if (Array.isArray(parts) && parts.length > 0) {
+    for (const line of parts) {
+      if (!line || typeof line !== 'object') continue;
+      const item = line as { label?: unknown; usd?: unknown };
+      if (typeof item.label !== 'string' || typeof item.usd !== 'string') continue;
+      if (/^Pinned\b/.test(item.label)) pinTotal = pinTotal.add(D(item.usd));
+      else if (item.label !== 'Ad skin') postTotal = postTotal.add(D(item.usd));
+    }
+  } else if (pinnedMinutes === 0) {
+    // Legacy unpinned ads have no ambiguity: all stored value is post value.
+    postTotal = D(ad.priceUsd);
+  }
+  if (postTotal.lt(0)) postTotal = D(0);
+  if (pinTotal.lt(0)) pinTotal = D(0);
+  const postRefund = totalPosts > 0 ? postTotal.mul(unusedPosts).div(totalPosts) : D(0);
+  const pinRefund = pinnedMinutes > 0
+    ? pinTotal.mul(unusedPinSeconds).div(pinnedMinutes * 60)
+    : D(0);
+  const raw = usdStored(postRefund.add(pinRefund));
   if (!fee || !D(raw).gt(0)) return raw;
   const feeAmount = addCost(fee, D(raw));
   const finalRefund = D(raw).sub(feeAmount);

@@ -124,12 +124,22 @@ describe.skipIf(!url)('ChatMoneyDbOperation.cancelAd (scratch database)', () => 
 
   afterAll(async () => prisma?.$disconnect());
 
-  const ad = async (price: string, repeat: number, posted: number, pin: number | null, charged = true) => {
+  const ad = async (
+    price: string,
+    repeat: number,
+    posted: number,
+    pin: number | null,
+    charged = true,
+    breakdown?: { label: string; usd: string }[],
+  ) => {
     const id = ChatUtility.generateUuid();
+    const lines = breakdown ?? (pin === null
+      ? [{ label: 'Base price', usd: `${Number(price).toFixed(8)}` }]
+      : [{ label: 'Base price', usd: '1.00000000' }, { label: `Pinned ${pin} min`, usd: (Number(price) - 1).toFixed(8) }]);
     await prisma.$executeRaw`
       INSERT INTO chat.chat_ads (id, creator_id, content, room_ids, pin_minutes, repeat_count, posted_count, price_usd, breakdown,
         charge_reference, status)
-      VALUES (${id}::uuid, ${user}::uuid, 'x', ${[roomA, roomB]}::uuid[], ${pin}::int, ${repeat}, ${posted}, ${price}::numeric, '[]'::jsonb,
+      VALUES (${id}::uuid, ${user}::uuid, 'x', ${[roomA, roomB]}::uuid[], ${pin}::int, ${repeat}, ${posted}, ${price}::numeric, ${JSON.stringify(lines)}::jsonb,
         ${charged ? `pay-${id}` : null}, 'ACTIVE')
     `;
     return id;
@@ -148,8 +158,16 @@ describe.skipIf(!url)('ChatMoneyDbOperation.cancelAd (scratch database)', () => 
     expect((await db.cancelAd(await ad('12.5', 0, 0, null, false), user, null, 'UNUSED')).refundUsd).toBeNull();
   });
 
+  it('prorates post and pin prices separately instead of treating each post as one pin minute (N-008)', async () => {
+    const id = await ad('20', 0, 1, 1000, true, [
+      { label: 'Base price', usd: '10.00000000' },
+      { label: 'Pinned 1000 min', usd: '10.00000000' },
+    ]);
+    expect((await db.cancelAd(id, user, null, 'UNUSED')).refundUsd).toBe('10.00000000');
+  });
+
   it('the pinned minutes count once per ad, however many rooms, and a showing slot counts as used', async () => {
-    // 1 post (made) + 10 pinned minutes in two rooms = 11 units; room A has shown 4 minutes, room B none: 6 of 11 unused.
+    // Post is $1 and pin is $10; active pin minutes are counted once across rooms.
     const id = await ad('11', 0, 1, 10);
     await prisma.$executeRaw`
       INSERT INTO chat.chat_ad_placements (id, ad_id, room_id, minutes, duration_seconds, status, starts_at, ends_at)
@@ -164,7 +182,7 @@ describe.skipIf(!url)('ChatMoneyDbOperation.cancelAd (scratch database)', () => 
         (${ChatUtility.generateUuid()}::uuid, ${other}::uuid, ${roomA}::uuid, 10, 600, 'QUEUED'),
         (${ChatUtility.generateUuid()}::uuid, ${other}::uuid, ${roomB}::uuid, 10, 600, 'QUEUED')
     `;
-    // nothing shown anywhere: 10 of 11 units unused, not 20 of 21
+    // Nothing shown anywhere: the full $10 pin component is unused, not 10/11 of the full ad price.
     expect((await db.cancelAd(other, user, null, 'UNUSED')).refundUsd).toBe('10.00000000');
   });
 });

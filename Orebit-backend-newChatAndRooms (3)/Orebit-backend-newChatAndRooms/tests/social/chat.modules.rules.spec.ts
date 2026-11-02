@@ -313,10 +313,29 @@ describe('Module 5: ad prices', () => {
     expect(unusedRefundUsd('10.00000000', { unused: 0, units: 0 })).toBe('0.00000000');
   });
 
+  it('refunds post and pinned value using their separate stored prices (N-008)', () => {
+    const ad = {
+      priceUsd: '20.00000000', repeatCount: 0, postedCount: 1, pinMinutes: 1000, roomIds: ['a', 'b', 'c'],
+      breakdown: [
+        { label: 'Base price', usd: '10.00000000' },
+        { label: 'Pinned 1000 min', usd: '10.00000000' },
+      ],
+    };
+    // The post is already sent; all 1000 pin minutes are still unused. Equal-counting a post and a minute
+    // would return almost the entire $20, but itemized pricing returns only the pin's $10.
+    expect(refundForCancel(ad, 0)).toBe('10.00000000');
+    expect(refundForCancel({ ...ad, pinMinutes: 0, breakdown: [{ label: 'Base price', usd: '10.00000000' }] }, 0)).toBe('0.00000000');
+  });
+
   it('the pinned minutes of a refund are counted once per ad, whatever the number of rooms (FR-107)', () => {
-    const ad = { priceUsd: '12.00000000', repeatCount: 0, postedCount: 1, pinMinutes: 10, roomIds: ['a', 'b', 'c'] };
-    // 10 pinned minutes plus one post slot; 4 minutes shown: 6 of 11 minutes unused.
-    expect(refundForCancel(ad, 240)).toBe(unusedRefundUsd('12.00000000', { unused: 360, units: 660 }));
+    const ad = {
+      priceUsd: '12.00000000', repeatCount: 0, postedCount: 1, pinMinutes: 10, roomIds: ['a', 'b', 'c'],
+      breakdown: [
+        { label: 'Base price', usd: '2.00000000' },
+        { label: 'Pinned 10 min', usd: '10.00000000' },
+      ],
+    };
+    expect(refundForCancel(ad, 240)).toBe('6.00000000');
   });
 
   it('advertiser stop refunds only post-price lines and leaves pin/skin spend untouched', () => {

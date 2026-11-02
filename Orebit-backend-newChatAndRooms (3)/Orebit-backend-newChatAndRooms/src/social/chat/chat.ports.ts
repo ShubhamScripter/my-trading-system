@@ -82,6 +82,7 @@ export interface PortFacts {
 @Injectable()
 export class ChatPorts {
   private readonly zoneCache = new Map<string, { value: string | null; at: number }>();
+  private static readonly ZONE_CACHE_MS = 5 * 60_000;
   constructor(
     private readonly testProviders: TestProviders,
     private readonly registrationCountry: RegistrationCountryProvider,
@@ -105,7 +106,7 @@ export class ChatPorts {
     const missing: string[] = [];
     for (const id of userIds) {
       const hit = this.zoneCache.get(id);
-      if (hit && now - hit.at < 60_000) out.set(id, hit.value);
+      if (hit && now - hit.at < ChatPorts.ZONE_CACHE_MS) out.set(id, hit.value);
       else missing.push(id);
     }
     if (!this.zones) {

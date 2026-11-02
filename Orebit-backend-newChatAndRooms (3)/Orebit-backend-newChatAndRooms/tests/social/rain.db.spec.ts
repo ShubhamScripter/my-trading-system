@@ -58,6 +58,20 @@ describe.skipIf(!url)('rain persistence on a migrated scratch database', () => {
     expect(after).toEqual(before);
   });
 
+  it('refuses a status patch when the stored config is invalid and leaves it untouched', async () => {
+    const before = await prisma.$queryRaw<{ document: unknown }[]>`SELECT document FROM rain.config WHERE id = 1`;
+    try {
+      await prisma.$executeRaw`UPDATE rain.config SET document = '{"status":{"system":"BROKEN"}}'::jsonb WHERE id = 1`;
+      await expect(rain.patchStatus({ system: 'OFF' })).rejects.toThrow();
+      const after = await prisma.$queryRaw<{ document: unknown }[]>`SELECT document FROM rain.config WHERE id = 1`;
+      expect(after[0]?.document).toEqual({ status: { system: 'BROKEN' } });
+    } finally {
+      if (before[0]) {
+        await prisma.$executeRaw`UPDATE rain.config SET document = ${JSON.stringify(before[0].document)}::jsonb WHERE id = 1`;
+      }
+    }
+  });
+
   it('stores recipient_count and all paid recipient shares in the payment transaction', async () => {
     await prisma.$transaction(async (tx) => {
       await rain.insertRun(tx, {
